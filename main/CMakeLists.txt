@@ -1,0 +1,39 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "cube.c"
+        "config.c"
+        "render.c"
+        "effects.c"
+        "effect_rain.c"
+        "effect_fire.c"
+        "effect_rainbow.c"
+        "effect_solid.c"
+        "effect_calib.c"
+        "effect_radial.c"
+        "effect_balls.c"
+        "effect_chase.c"
+        "effect_plasma.c"
+        "effect_pingpong.c"
+        "effect_fireworks.c"
+        "effect_matrix.c"
+        "effect_galaxy.c"
+        "net.c"
+        "http.c"
+        "dns_captive.c"
+    INCLUDE_DIRS "."
+    EMBED_FILES
+        "web/index.html"
+        "web/app.js"
+        "web/style.css"
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_http_server
+        esp_event
+        esp_timer
+        esp_hw_support
+        driver
+        lwip
+)

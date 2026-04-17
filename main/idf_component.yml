@@ -1,0 +1,5 @@
+## IDF managed components for MatrixCube.
+dependencies:
+  espressif/led_strip: "^2.5.3"
+  idf:
+    version: ">=5.1"

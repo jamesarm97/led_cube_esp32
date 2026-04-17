@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>MatrixCube</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>MatrixCube</h1>
+    <div id="status" class="status">connecting…</div>
+  </header>
+
+  <section class="card">
+    <h2>Effect</h2>
+    <div id="effects" class="pill-group"></div>
+    <div class="calib-row">
+      <button id="random-toggle">Cycle randomly</button>
+      <span id="random-status" class="hint"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Startup</h2>
+    <p class="hint">What the cube does when powered on. "Last" resumes the previously active effect.</p>
+    <div class="calib-row">
+      <label>Mode
+        <select id="startup-mode">
+          <option value="last">Last effect</option>
+          <option value="random">Random cycle</option>
+          <option value="specific">Specific effect</option>
+        </select>
+      </label>
+      <label id="startup-effect-wrap">Effect
+        <select id="startup-effect"></select>
+      </label>
+    </div>
+    <label>Random cycle interval: <output id="random-interval-val">30</output>s
+      <input id="random-interval" type="range" min="5" max="300" value="30">
+    </label>
+    <div class="calib-row">
+      <button id="startup-save">Save startup</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Brightness</h2>
+    <input id="brightness" type="range" min="0" max="255" value="64">
+    <output id="brightness-val">64</output>
+  </section>
+
+  <section id="solid-card" class="card hidden">
+    <h2>Solid color</h2>
+    <div class="rgb-row">
+      <label>R<input id="solid-r" type="range" min="0" max="255"></label>
+      <label>G<input id="solid-g" type="range" min="0" max="255"></label>
+      <label>B<input id="solid-b" type="range" min="0" max="255"></label>
+    </div>
+    <div id="solid-preview" class="swatch"></div>
+  </section>
+
+  <section class="card">
+    <h2>Calibration</h2>
+    <p class="hint">Identify each physical panel, then save. After that, the edge-color test pattern helps you assemble the cube.</p>
+    <div class="calib-row">
+      <button id="calib-start">Start face-ID</button>
+      <span>Current panel: <b id="calib-step">0</b> / 5</span>
+    </div>
+    <div id="calib-face-buttons" class="pill-group">
+      <button data-face="T">TOP</button>
+      <button data-face="B">BOTTOM</button>
+      <button data-face="N">NORTH</button>
+      <button data-face="S">SOUTH</button>
+      <button data-face="E">EAST</button>
+      <button data-face="W">WEST</button>
+    </div>
+    <div class="calib-row">
+      <span>Rotation of current panel:</span>
+      <div id="calib-rot" class="pill-group">
+        <button data-rot="0">0°</button>
+        <button data-rot="1">90°</button>
+        <button data-rot="2">180°</button>
+        <button data-rot="3">270°</button>
+      </div>
+    </div>
+    <div class="calib-row">
+      <button id="calib-edge">Edge-match preview</button>
+      <button id="calib-done">Save calibration</button>
+      <button id="calib-reset" class="danger">Reset</button>
+    </div>
+    <table class="calib-table">
+      <thead><tr><th>Physical</th><th>Face</th><th>Rot</th></tr></thead>
+      <tbody id="calib-table"></tbody>
+    </table>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

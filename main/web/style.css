@@ -1,0 +1,59 @@
+:root {
+  --bg: #0c0d11;
+  --card: #171822;
+  --ink: #e7e9f2;
+  --muted: #8b8f9f;
+  --accent: #49b3ff;
+  --accent-ink: #05131f;
+  --danger: #ff5a5a;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 1rem 1.25rem;
+}
+header h1 { font-size: 1.25rem; margin: 0; }
+.status { color: var(--muted); font-size: .85rem; }
+
+.card {
+  background: var(--card);
+  margin: 0.5rem 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+}
+.card h2 { margin: 0 0 .6rem; font-size: 1rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 .8rem; }
+
+.pill-group { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pill-group button {
+  appearance: none; border: 1px solid #272937; background: #1f2130;
+  color: var(--ink); padding: .55rem .9rem; border-radius: 999px;
+  font: inherit; cursor: pointer;
+}
+.pill-group button.active {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+.pill-group button:active { transform: translateY(1px); }
+button.danger { color: var(--danger); border-color: #4b2731; background: #27141a; }
+
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.rgb-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .6rem; margin-bottom: .6rem; }
+.rgb-row label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--muted); }
+.swatch { height: 40px; border-radius: 8px; border: 1px solid #272937; }
+
+.calib-row { display: flex; align-items: center; gap: .6rem; margin: .6rem 0; flex-wrap: wrap; }
+.calib-table { width: 100%; margin-top: .75rem; font-size: .85rem; border-collapse: collapse; }
+.calib-table th, .calib-table td { padding: .35rem .5rem; text-align: left; border-bottom: 1px solid #262836; }
+.calib-table th { color: var(--muted); font-weight: 600; }
+
+.hidden { display: none !important; }
+output { color: var(--muted); font-variant-numeric: tabular-nums; }
