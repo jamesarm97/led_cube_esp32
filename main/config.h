@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "cube.h"
+#include "orient.h"
 
 typedef enum {
     EFFECT_OFF = 0,
@@ -24,6 +25,16 @@ typedef enum {
     EFFECT_FIREWORKS,   // rockets -> explosion near top -> spill onto TOP
     EFFECT_MATRIX,      // Matrix-movie green rain on the 4 side faces
     EFFECT_GALAXY,      // rotating log-spiral arms per face
+    EFFECT_SPIRAL,      // outer-edge inward spiral per face
+    EFFECT_RIPPLE,      // expanding concentric rings from random drop points
+    EFFECT_WARP,        // per-face warp-speed starfield radiating from center
+    EFFECT_AURORA,      // flowing aurora color bands on TOP, fading to sides
+    EFFECT_LIFE,        // (removed; enum slot kept to preserve NVS effect-id ordering)
+    EFFECT_LIGHTNING,   // jagged lightning bolts top-to-bottom on side faces
+    EFFECT_BREAKOUT,    // ball bouncing off bricks + auto paddle on TOP
+    EFFECT_PULSE,       // concentric pulses emanating from the top pole
+    EFFECT_TETRIS,      // tetrominoes fall on the 4 side faces, stack, clear
+    EFFECT_PENDULUM,    // swinging pendulums — one per side face
     EFFECT_COUNT,
 } effect_id_t;
 
@@ -60,6 +71,9 @@ typedef struct {
     effect_id_t    startup_effect;    // used when startup_mode == SPECIFIC
     uint16_t       random_interval_s; // used when startup_mode == RANDOM (or random toggled at runtime)
 
+    // Physical orientation of the cube in its stand.
+    orient_mode_t  orientation;       // FACE_UP | CORNER_UP
+
     // WiFi AP credentials.
     char         ap_ssid[33];
     char         ap_pass[65];       // empty = open
@@ -84,11 +98,20 @@ void config_set_effect(effect_id_t e);
 void config_set_brightness(uint8_t b);
 void config_set_panel_face(int physical_panel, cube_face_t face);
 void config_set_panel_rot(int physical_panel, uint8_t rot);
+void config_set_panel_mirror(int physical_panel, uint8_t mirror);
 void config_set_calibrated(bool calibrated);
 void config_set_solid(uint8_t r, uint8_t g, uint8_t b);
 
+// Swap which physical panel is mapped to FACE_EAST vs FACE_WEST. Handy when
+// the user realizes post-calibration that the two are 180° reversed —
+// saves re-running full face-ID calibration.
+void config_swap_east_west(void);
+
 // Startup settings.
 void config_set_startup(startup_mode_t mode, effect_id_t e, uint16_t interval_s);
+
+// Physical orientation — also updates the live orient module immediately.
+void config_set_orientation(orient_mode_t m);
 
 // Serialize/restore for the HTTP API.
 const char *effect_name(effect_id_t e);

@@ -22,6 +22,15 @@
   </section>
 
   <section class="card">
+    <h2>Orientation</h2>
+    <p class="hint">Physical cube pose. "Corner-up" treats the TOP+WEST+SOUTH vertex as the up pole — effects that depend on "up" (e.g. Matrix) flow toward the opposite corner instead of the bottom face.</p>
+    <div id="orientation" class="pill-group">
+      <button data-mode="face_up">Face up</button>
+      <button data-mode="corner_up">Corner up</button>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>Startup</h2>
     <p class="hint">What the cube does when powered on. "Last" resumes the previously active effect.</p>
     <div class="calib-row">
@@ -65,7 +74,23 @@
     <p class="hint">Identify each physical panel, then save. After that, the edge-color test pattern helps you assemble the cube.</p>
     <div class="calib-row">
       <button id="calib-start">Start face-ID</button>
-      <span>Current panel: <b id="calib-step">0</b> / 5</span>
+      <button id="calib-edge">Edge-match preview</button>
+    </div>
+    <div class="calib-row">
+      <span>Panel <b id="calib-step">0</b> / 5:</span>
+      <div id="calib-panel-select" class="pill-group">
+        <button data-panel="0">0</button>
+        <button data-panel="1">1</button>
+        <button data-panel="2">2</button>
+        <button data-panel="3">3</button>
+        <button data-panel="4">4</button>
+        <button data-panel="5">5</button>
+      </div>
+      <button id="calib-next">Next →</button>
+    </div>
+    <p class="hint">Select a panel above (in face-ID mode the selected panel lights up white). Then identify its face, adjust its rotation / mirror, and press Next when done — pressing Next is the only way to advance. That lets you tap a face, then use the edge-match preview or mirror toggle without accidentally assigning faces to the next panel.</p>
+    <div class="calib-row">
+      <span>Assign face to panel <b class="calib-step-echo">0</b>:</span>
     </div>
     <div id="calib-face-buttons" class="pill-group">
       <button data-face="T">TOP</button>
@@ -76,7 +101,7 @@
       <button data-face="W">WEST</button>
     </div>
     <div class="calib-row">
-      <span>Rotation of current panel:</span>
+      <span>Rotation of panel <b class="calib-step-echo">0</b>:</span>
       <div id="calib-rot" class="pill-group">
         <button data-rot="0">0°</button>
         <button data-rot="1">90°</button>
@@ -85,12 +110,16 @@
       </div>
     </div>
     <div class="calib-row">
-      <button id="calib-edge">Edge-match preview</button>
+      <span>Mirror panel <b class="calib-step-echo">0</b>:</span>
+      <button id="calib-mirror">Mirror: off</button>
+    </div>
+    <div class="calib-row">
       <button id="calib-done">Save calibration</button>
+      <button id="calib-swap-ew">Swap E ↔ W</button>
       <button id="calib-reset" class="danger">Reset</button>
     </div>
     <table class="calib-table">
-      <thead><tr><th>Physical</th><th>Face</th><th>Rot</th></tr></thead>
+      <thead><tr><th>Physical</th><th>Face</th><th>Rot</th><th>Mirror</th></tr></thead>
       <tbody id="calib-table"></tbody>
     </table>
   </section>

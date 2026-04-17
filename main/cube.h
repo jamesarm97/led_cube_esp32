@@ -56,9 +56,10 @@ typedef struct {
 
 // Current calibration — set by config module, read by cube module.
 typedef struct {
-    cube_face_t panel_map[CUBE_FACE_COUNT]; // physical -> face
-    uint8_t     panel_rot[CUBE_FACE_COUNT]; // 0/1/2/3 => 0/90/180/270
-    bool        serpentine;                 // 8x8 panel serpentine wiring
+    cube_face_t panel_map[CUBE_FACE_COUNT];    // physical -> face
+    uint8_t     panel_rot[CUBE_FACE_COUNT];    // 0/1/2/3 => 0/90/180/270
+    uint8_t     panel_mirror[CUBE_FACE_COUNT]; // 0 or 1; 1 = horizontal flip applied BEFORE rotation
+    bool        serpentine;                    // 8x8 panel serpentine wiring
 } cube_calib_t;
 
 // Initialize / update calibration in the cube module. Safe to call at runtime.

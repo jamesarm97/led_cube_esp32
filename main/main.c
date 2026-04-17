@@ -15,6 +15,7 @@
 #include "net.h"
 #include "http.h"
 #include "dns_captive.h"
+#include "orient.h"
 
 #include "esp_log.h"
 #include "esp_event.h"
@@ -29,6 +30,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_netif_init());
 
     config_init();
+    orient_set(config_get()->orientation);  // sync orient module with persisted config
     render_start();
     effects_start();
 

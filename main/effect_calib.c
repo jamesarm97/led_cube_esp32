@@ -48,12 +48,20 @@ static void draw_letter(cube_face_t f, uint8_t r, uint8_t g, uint8_t b) {
     const glyph_t *gl = glyph_for(f);
     if (!gl) return;
     // 5x5 glyph centered in 8x8 -> origin (x=1, y=1)..(x=5, y=5).
+    //
+    // EAST and WEST have their face-local +x axis pointing toward the
+    // viewer's LEFT when looking at the face from outside the cube (because
+    // those faces' "x" axis runs south and north respectively). Writing the
+    // glyph in face-local order would produce a mirrored letter. Flip the
+    // column index for those two faces so the letter reads correctly.
+    bool flip_x = (f == FACE_EAST || f == FACE_WEST);
     int ox = 1, oy = 1;
     for (int cx = 0; cx < 5; cx++) {
         uint8_t col = gl->col[cx];
+        int dx = flip_x ? (4 - cx) : cx;
         for (int cy = 0; cy < 5; cy++) {
             if (col & (1 << (4 - cy))) {
-                render_set(f, ox + cx, oy + cy, r, g, b);
+                render_set(f, ox + dx, oy + cy, r, g, b);
             }
         }
     }

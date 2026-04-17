@@ -2,6 +2,7 @@
 #include "config.h"
 #include "effects.h"
 #include "cube.h"
+#include "orient.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -128,9 +129,11 @@ static esp_err_t h_state(httpd_req_t *req) {
         "\"rainbow\":{\"speed\":%u},"
         "\"panel_map\":[%d,%d,%d,%d,%d,%d],"
         "\"panel_rot\":[%u,%u,%u,%u,%u,%u],"
+        "\"panel_mirror\":[%u,%u,%u,%u,%u,%u],"
         "\"serpentine\":%s,"
         "\"ap\":{\"ssid\":\"%s\",\"channel\":%u},"
-        "\"startup\":{\"mode\":\"%s\",\"effect\":\"%s\",\"interval_s\":%u,\"random_active\":%s}"
+        "\"startup\":{\"mode\":\"%s\",\"effect\":\"%s\",\"interval_s\":%u,\"random_active\":%s},"
+        "\"orientation\":\"%s\""
         "}",
         effect_name(c->effect), c->brightness, c->calibrated ? "true" : "false",
         c->calib_step, (unsigned)c->max_ma,
@@ -142,12 +145,15 @@ static esp_err_t h_state(httpd_req_t *req) {
         c->calib.panel_map[3], c->calib.panel_map[4], c->calib.panel_map[5],
         c->calib.panel_rot[0], c->calib.panel_rot[1], c->calib.panel_rot[2],
         c->calib.panel_rot[3], c->calib.panel_rot[4], c->calib.panel_rot[5],
+        c->calib.panel_mirror[0], c->calib.panel_mirror[1], c->calib.panel_mirror[2],
+        c->calib.panel_mirror[3], c->calib.panel_mirror[4], c->calib.panel_mirror[5],
         c->calib.serpentine ? "true" : "false",
         c->ap_ssid, c->ap_channel,
         startup_mode_name(c->startup_mode),
         effect_name(c->startup_effect),
         c->random_interval_s,
-        effects_random_active() ? "true" : "false");
+        effects_random_active() ? "true" : "false",
+        c->orientation == ORIENT_CORNER_UP ? "corner_up" : "face_up");
     config_unlock();
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -176,6 +182,20 @@ static esp_err_t h_startup(httpd_req_t *req) {
     json_str(body, "effect", eff, sizeof(eff));
     int iv = json_int(body, "interval_s", 30);
     config_set_startup(startup_mode_from_name(mode), effect_from_name(eff), (uint16_t)iv);
+    return json_ok(req);
+}
+
+// POST /api/orientation  body: { mode: "face_up"|"corner_up" }
+static esp_err_t h_orientation(httpd_req_t *req) {
+    char body[64];
+    if (read_body(req, body, sizeof(body)) < 0) return json_err(req, 400, "read");
+    char mode[16] = {0};
+    if (!json_str(body, "mode", mode, sizeof(mode))) return json_err(req, 400, "mode");
+    orient_mode_t m = (!strcmp(mode, "corner_up")) ? ORIENT_CORNER_UP : ORIENT_FACE_UP;
+    config_set_orientation(m);
+    // Re-enter the current effect so orientation-aware effects rebuild
+    // their precomputed fields (matrix in particular).
+    effects_notify_effect_changed();
     return json_ok(req);
 }
 
@@ -249,6 +269,22 @@ static esp_err_t h_calib_rot(httpd_req_t *req) {
     return json_ok(req);
 }
 
+// POST /api/calib/mirror  body: { panel: 0..5, mirror: 0|1 }
+//
+// Horizontal flip of a panel's pixel grid. Needed for any panel whose
+// physical mount results in a left-handed orientation that can't be
+// achieved by the 4 possible rotations.
+static esp_err_t h_calib_mirror(httpd_req_t *req) {
+    char body[64];
+    if (read_body(req, body, sizeof(body)) < 0) return json_err(req, 400, "read");
+    int panel  = json_int(body, "panel", -1);
+    int mirror = json_int(body, "mirror", -1);
+    if (panel < 0 || panel >= CUBE_FACE_COUNT || mirror < 0 || mirror > 1)
+        return json_err(req, 400, "args");
+    config_set_panel_mirror(panel, (uint8_t)mirror);
+    return json_ok(req);
+}
+
 static esp_err_t h_calib_done(httpd_req_t *req) {
     config_set_calibrated(true);
     // Switch to the edge-match view so the user can verify orientation.
@@ -257,12 +293,26 @@ static esp_err_t h_calib_done(httpd_req_t *req) {
     return json_ok(req);
 }
 
+// POST /api/calib/swap_ew  (no body)
+//
+// Swaps which panel is FACE_EAST vs FACE_WEST in the saved panel map.
+// Useful when face-ID calibration looked correct but the edge-match test
+// shows E and W on the wrong physical sides (a 180° mislabel that's easy
+// to make during a 6-button calibration).
+static esp_err_t h_calib_swap_ew(httpd_req_t *req) {
+    (void)req;
+    config_swap_east_west();
+    effects_notify_effect_changed();
+    return json_ok(req);
+}
+
 static esp_err_t h_calib_reset(httpd_req_t *req) {
     config_lock();
     app_config_t *c = config_get();
     for (int i = 0; i < CUBE_FACE_COUNT; i++) {
-        c->calib.panel_map[i] = (cube_face_t)i;
-        c->calib.panel_rot[i] = 0;
+        c->calib.panel_map[i]    = (cube_face_t)i;
+        c->calib.panel_rot[i]    = 0;
+        c->calib.panel_mirror[i] = 0;
     }
     c->calibrated = false;
     c->calib_step = 0;
@@ -288,10 +338,13 @@ static const httpd_uri_t s_uris[] = {
     { .uri="/api/calib/step",.method=HTTP_POST,.handler=h_calib_step },
     { .uri="/api/calib/face",.method=HTTP_POST,.handler=h_calib_face },
     { .uri="/api/calib/rot",.method=HTTP_POST, .handler=h_calib_rot },
+    { .uri="/api/calib/mirror",.method=HTTP_POST,.handler=h_calib_mirror },
     { .uri="/api/calib/done",.method=HTTP_POST,.handler=h_calib_done },
     { .uri="/api/calib/reset",.method=HTTP_POST,.handler=h_calib_reset },
+    { .uri="/api/calib/swap_ew",.method=HTTP_POST,.handler=h_calib_swap_ew },
     { .uri="/api/startup",    .method=HTTP_POST, .handler=h_startup },
     { .uri="/api/random",     .method=HTTP_POST, .handler=h_random },
+    { .uri="/api/orientation",.method=HTTP_POST, .handler=h_orientation },
     // Captive portal probe endpoints — redirect to /.
     { .uri="/generate_204",      .method=HTTP_GET, .handler=h_captive_redirect },
     { .uri="/gen_204",           .method=HTTP_GET, .handler=h_captive_redirect },

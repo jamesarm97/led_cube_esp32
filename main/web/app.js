@@ -14,6 +14,15 @@ const EFFECTS = [
   { id: "fireworks",  label: "Fireworks" },
   { id: "matrix",     label: "Matrix"    },
   { id: "galaxy",     label: "Galaxy"    },
+  { id: "spiral",     label: "Spiral"    },
+  { id: "ripple",     label: "Ripple"    },
+  { id: "warp",       label: "Warp"      },
+  { id: "aurora",     label: "Aurora"    },
+  { id: "lightning",  label: "Lightning" },
+  { id: "breakout",   label: "Breakout"  },
+  { id: "pulse",      label: "Pulse"     },
+  { id: "tetris",     label: "Tetris"    },
+  { id: "pendulum",   label: "Pendulum"  },
   { id: "calib_face", label: "Face-ID"   },
   { id: "calib_edge", label: "Edge test" },
   { id: "face_test",  label: "QA test"   },
@@ -44,8 +53,17 @@ function render() {
   renderEffects();
   renderBrightness();
   renderSolid();
+  renderOrientation();
   renderStartup();
   renderCalib();
+}
+
+function renderOrientation() {
+  const cur = state.orientation || "face_up";
+  for (const btn of document.querySelectorAll("#orientation button")) {
+    btn.classList.toggle("active", btn.dataset.mode === cur);
+    btn.onclick = () => api("/api/orientation", { mode: btn.dataset.mode }).then(refresh);
+  }
 }
 
 function renderStartup() {
@@ -133,11 +151,32 @@ function renderSolid() {
 
 function renderCalib() {
   document.getElementById("calib-step").textContent = state.calib_step;
+  for (const el of document.querySelectorAll(".calib-step-echo")) {
+    el.textContent = state.calib_step;
+  }
+  // Highlight the currently selected panel.
+  for (const btn of document.querySelectorAll("#calib-panel-select button")) {
+    btn.classList.toggle("active", +btn.dataset.panel === state.calib_step);
+  }
+  // Highlight the rotation currently applied to the selected panel.
+  const curRot = state.panel_rot[state.calib_step] || 0;
+  for (const btn of document.querySelectorAll("#calib-rot button")) {
+    btn.classList.toggle("active", +btn.dataset.rot === curRot);
+  }
+  // Mirror button reflects current state.
+  const mirrors = state.panel_mirror || [0,0,0,0,0,0];
+  const mirrorBtn = document.getElementById("calib-mirror");
+  const mirrorOn = !!mirrors[state.calib_step];
+  mirrorBtn.classList.toggle("active", mirrorOn);
+  mirrorBtn.textContent = mirrorOn ? "Mirror: ON (click to disable)"
+                                   : "Mirror: off (click to enable)";
+
   const tbody = document.getElementById("calib-table");
   tbody.innerHTML = "";
   for (let i = 0; i < 6; i++) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${i}</td><td>${FACES[state.panel_map[i]] || "?"}</td><td>${state.panel_rot[i] * 90}°</td>`;
+    if (i === state.calib_step) tr.classList.add("active-row");
+    tr.innerHTML = `<td>${i}</td><td>${FACES[state.panel_map[i]] || "?"}</td><td>${state.panel_rot[i] * 90}°</td><td>${mirrors[i] ? "yes" : "no"}</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -148,12 +187,29 @@ document.getElementById("calib-start").onclick = async () => {
   await api("/api/calib/step", { panel: 0 });
   refresh();
 };
+// Panel selector — tap any panel to make it the "current" panel for face
+// assignment, rotation, and mirror. In face-ID mode it also lights that
+// panel up white so you can confirm which physical panel you're targeting.
+for (const btn of document.querySelectorAll("#calib-panel-select button")) {
+  btn.onclick = async () => {
+    await api("/api/calib/step", { panel: +btn.dataset.panel });
+    refresh();
+  };
+}
+// Explicit Next button: advances the selected panel by 1 (wraps 5 → 0).
+// No auto-advance from face-assign means you can tap a face, then freely
+// switch to edge-match preview / toggle mirror / tweak rotation without
+// the panel selector jumping forward on you.
+document.getElementById("calib-next").onclick = async () => {
+  if (!state) return;
+  const next = (state.calib_step + 1) % 6;
+  await api("/api/calib/step", { panel: next });
+  refresh();
+};
 for (const btn of document.querySelectorAll("#calib-face-buttons button")) {
   btn.onclick = async () => {
     if (!state) return;
     await api("/api/calib/face", { panel: state.calib_step, face: btn.dataset.face });
-    const next = (state.calib_step + 1) % 6;
-    await api("/api/calib/step", { panel: next });
     refresh();
   };
 }
@@ -164,10 +220,17 @@ for (const btn of document.querySelectorAll("#calib-rot button")) {
     refresh();
   };
 }
+document.getElementById("calib-mirror").onclick = async () => {
+  if (!state) return;
+  const cur = (state.panel_mirror || [0,0,0,0,0,0])[state.calib_step] || 0;
+  await api("/api/calib/mirror", { panel: state.calib_step, mirror: cur ? 0 : 1 });
+  refresh();
+};
 document.getElementById("calib-edge").onclick = () => api("/api/effect", { name: "calib_edge" }).then(refresh);
-document.getElementById("calib-done").onclick = () => api("/api/calib/done").then(refresh);
+document.getElementById("calib-done").onclick = () => api("/api/calib/done", {}).then(refresh);
+document.getElementById("calib-swap-ew").onclick = () => api("/api/calib/swap_ew", {}).then(refresh);
 document.getElementById("calib-reset").onclick = () => {
-  if (confirm("Reset panel calibration?")) api("/api/calib/reset").then(refresh);
+  if (confirm("Reset panel calibration?")) api("/api/calib/reset", {}).then(refresh);
 };
 
 refresh();

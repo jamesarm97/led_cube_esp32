@@ -29,6 +29,15 @@ extern const effect_vtable_t g_effect_pingpong;
 extern const effect_vtable_t g_effect_fireworks;
 extern const effect_vtable_t g_effect_matrix;
 extern const effect_vtable_t g_effect_galaxy;
+extern const effect_vtable_t g_effect_spiral;
+extern const effect_vtable_t g_effect_ripple;
+extern const effect_vtable_t g_effect_warp;
+extern const effect_vtable_t g_effect_aurora;
+extern const effect_vtable_t g_effect_lightning;
+extern const effect_vtable_t g_effect_breakout;
+extern const effect_vtable_t g_effect_pulse;
+extern const effect_vtable_t g_effect_tetris;
+extern const effect_vtable_t g_effect_pendulum;
 
 // Random mode: cycle through visual effects every N seconds. Interval comes
 // from config_get()->random_interval_s. Automatically disables when the user

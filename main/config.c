@@ -18,13 +18,19 @@ static SemaphoreHandle_t s_mutex;
 static void apply_defaults(app_config_t *c) {
     // Identity panel map: physical i -> face i. User will calibrate.
     for (int i = 0; i < CUBE_FACE_COUNT; i++) {
-        c->calib.panel_map[i] = (cube_face_t)i;
-        c->calib.panel_rot[i] = 0;
+        c->calib.panel_map[i]    = (cube_face_t)i;
+        c->calib.panel_rot[i]    = 0;
+        c->calib.panel_mirror[i] = 0;
     }
     c->calib.serpentine = true;
     c->calibrated       = false;
 
-    c->effect           = EFFECT_CALIB_FACE; // force calibration on first boot
+    // Default effect is a regular visual — not a calibration mode. The
+    // post-load "!calibrated" block below still forces CALIB_FACE on a truly
+    // uncalibrated cube. Using RAINBOW as the default means that if the NVS
+    // "effect" key is ever missing while "calibrated" is true, we recover
+    // gracefully instead of silently falling back into face calibration.
+    c->effect           = EFFECT_RAINBOW;
     c->brightness       = 64;                // ~25%
     c->max_ma           = 4000;              // 4A safety cap by default
     c->solid_r = 255; c->solid_g = 255; c->solid_b = 255;
@@ -40,6 +46,8 @@ static void apply_defaults(app_config_t *c) {
     c->startup_mode       = STARTUP_LAST;
     c->startup_effect     = EFFECT_RAINBOW;
     c->random_interval_s  = 30;
+
+    c->orientation        = ORIENT_FACE_UP;
 
     snprintf(c->ap_ssid, sizeof(c->ap_ssid), "MatrixCube");
     c->ap_pass[0]       = '\0';
@@ -95,6 +103,7 @@ void config_init(void) {
     if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
         nvs_load_blob(h, "panel_map", s_cfg.calib.panel_map, sizeof(s_cfg.calib.panel_map));
         nvs_load_blob(h, "panel_rot", s_cfg.calib.panel_rot, sizeof(s_cfg.calib.panel_rot));
+        nvs_load_blob(h, "panel_mir", s_cfg.calib.panel_mirror, sizeof(s_cfg.calib.panel_mirror));
 
         uint8_t serp = s_cfg.calib.serpentine;
         nvs_load_u8(h, "serpentine", &serp);
@@ -133,17 +142,34 @@ void config_init(void) {
         s_cfg.startup_effect = (effect_id_t)se;
         nvs_load_u16(h, "rand_int", &s_cfg.random_interval_s);
 
+        uint8_t o = (uint8_t)s_cfg.orientation;
+        nvs_load_u8(h, "orient", &o);
+        s_cfg.orientation = (orient_mode_t)o;
+
         nvs_close(h);
     } else {
         ESP_LOGI(TAG, "NVS namespace %s empty; using defaults", NVS_NS);
     }
 
     // If calibration invalid (first boot or corruption), force calibration.
-    if (!s_cfg.calibrated) s_cfg.effect = EFFECT_CALIB_FACE;
+    if (!s_cfg.calibrated) {
+        s_cfg.effect = EFFECT_CALIB_FACE;
+    } else if (s_cfg.effect == EFFECT_CALIB_FACE ||
+               s_cfg.effect == EFFECT_CALIB_EDGE ||
+               s_cfg.effect == EFFECT_FACE_TEST) {
+        // Cube is calibrated, but NVS last stored a calibration-mode effect
+        // (typically because the user clicked "Save calibration" which
+        // switches to the edge-match preview). Promote to a regular visual
+        // effect on boot so the cube isn't stuck showing calibration art.
+        ESP_LOGI(TAG, "calibrated; promoting boot effect %s -> rainbow",
+                 effect_name(s_cfg.effect));
+        s_cfg.effect = EFFECT_RAINBOW;
+    }
 
     cube_set_calibration(&s_cfg.calib);
-    ESP_LOGI(TAG, "config loaded: effect=%d brightness=%u max_ma=%u calibrated=%d",
-             s_cfg.effect, s_cfg.brightness, (unsigned)s_cfg.max_ma, s_cfg.calibrated);
+    ESP_LOGI(TAG, "config loaded: effect=%s brightness=%u max_ma=%u calibrated=%d",
+             effect_name(s_cfg.effect), s_cfg.brightness,
+             (unsigned)s_cfg.max_ma, s_cfg.calibrated);
 }
 
 void config_save(void) {
@@ -153,6 +179,7 @@ void config_save(void) {
 
     nvs_set_blob(h, "panel_map", s_cfg.calib.panel_map, sizeof(s_cfg.calib.panel_map));
     nvs_set_blob(h, "panel_rot", s_cfg.calib.panel_rot, sizeof(s_cfg.calib.panel_rot));
+    nvs_set_blob(h, "panel_mir", s_cfg.calib.panel_mirror, sizeof(s_cfg.calib.panel_mirror));
     nvs_set_u8  (h, "serpentine", s_cfg.calib.serpentine ? 1 : 0);
     nvs_set_u8  (h, "calibrated", s_cfg.calibrated ? 1 : 0);
     nvs_set_u8  (h, "effect",     (uint8_t)s_cfg.effect);
@@ -172,6 +199,7 @@ void config_save(void) {
     nvs_set_u8  (h, "startup_m",  (uint8_t)s_cfg.startup_mode);
     nvs_set_u8  (h, "startup_e",  (uint8_t)s_cfg.startup_effect);
     nvs_set_u16 (h, "rand_int",   s_cfg.random_interval_s);
+    nvs_set_u8  (h, "orient",     (uint8_t)s_cfg.orientation);
 
     err = nvs_commit(h);
     if (err != ESP_OK) ESP_LOGE(TAG, "nvs_commit: %s", esp_err_to_name(err));
@@ -215,16 +243,45 @@ void config_set_panel_rot(int physical_panel, uint8_t rot) {
     config_save();
 }
 
+void config_set_panel_mirror(int physical_panel, uint8_t mirror) {
+    if (physical_panel < 0 || physical_panel >= CUBE_FACE_COUNT) return;
+    config_lock();
+    s_cfg.calib.panel_mirror[physical_panel] = mirror ? 1 : 0;
+    cube_set_calibration(&s_cfg.calib);
+    config_unlock();
+    config_save();
+}
+
 void config_set_calibrated(bool c) {
     config_lock();
     s_cfg.calibrated = c;
     config_unlock();
     config_save();
+    ESP_LOGI(TAG, "calibrated = %d (saved)", c);
 }
 
 void config_set_solid(uint8_t r, uint8_t g, uint8_t b) {
     config_lock();
     s_cfg.solid_r = r; s_cfg.solid_g = g; s_cfg.solid_b = b;
+    config_unlock();
+    config_save();
+}
+
+void config_swap_east_west(void) {
+    config_lock();
+    int e = -1, w = -1;
+    for (int p = 0; p < CUBE_FACE_COUNT; p++) {
+        if (s_cfg.calib.panel_map[p] == FACE_EAST) e = p;
+        else if (s_cfg.calib.panel_map[p] == FACE_WEST) w = p;
+    }
+    if (e >= 0 && w >= 0) {
+        s_cfg.calib.panel_map[e] = FACE_WEST;
+        s_cfg.calib.panel_map[w] = FACE_EAST;
+        cube_set_calibration(&s_cfg.calib);
+        ESP_LOGI(TAG, "swapped EAST(panel=%d) <-> WEST(panel=%d)", e, w);
+    } else {
+        ESP_LOGW(TAG, "swap_east_west: no EAST/WEST panel mapped yet");
+    }
     config_unlock();
     config_save();
 }
@@ -247,6 +304,15 @@ const char *effect_name(effect_id_t e) {
         case EFFECT_FIREWORKS:   return "fireworks";
         case EFFECT_MATRIX:      return "matrix";
         case EFFECT_GALAXY:      return "galaxy";
+        case EFFECT_SPIRAL:      return "spiral";
+        case EFFECT_RIPPLE:      return "ripple";
+        case EFFECT_WARP:        return "warp";
+        case EFFECT_AURORA:      return "aurora";
+        case EFFECT_LIGHTNING:   return "lightning";
+        case EFFECT_BREAKOUT:    return "breakout";
+        case EFFECT_PULSE:       return "pulse";
+        case EFFECT_TETRIS:      return "tetris";
+        case EFFECT_PENDULUM:    return "pendulum";
         default:                 return "?";
     }
 }
@@ -269,6 +335,15 @@ effect_id_t effect_from_name(const char *s) {
     if (!strcmp(s, "fireworks"))  return EFFECT_FIREWORKS;
     if (!strcmp(s, "matrix"))     return EFFECT_MATRIX;
     if (!strcmp(s, "galaxy"))     return EFFECT_GALAXY;
+    if (!strcmp(s, "spiral"))     return EFFECT_SPIRAL;
+    if (!strcmp(s, "ripple"))     return EFFECT_RIPPLE;
+    if (!strcmp(s, "warp"))       return EFFECT_WARP;
+    if (!strcmp(s, "aurora"))     return EFFECT_AURORA;
+    if (!strcmp(s, "lightning"))  return EFFECT_LIGHTNING;
+    if (!strcmp(s, "breakout"))   return EFFECT_BREAKOUT;
+    if (!strcmp(s, "pulse"))      return EFFECT_PULSE;
+    if (!strcmp(s, "tetris"))     return EFFECT_TETRIS;
+    if (!strcmp(s, "pendulum"))   return EFFECT_PENDULUM;
     return EFFECT_OFF;
 }
 
@@ -286,6 +361,14 @@ startup_mode_t startup_mode_from_name(const char *s) {
     if (!strcmp(s, "random"))   return STARTUP_RANDOM;
     if (!strcmp(s, "specific")) return STARTUP_SPECIFIC;
     return STARTUP_LAST;
+}
+
+void config_set_orientation(orient_mode_t m) {
+    config_lock();
+    s_cfg.orientation = m;
+    config_unlock();
+    orient_set(m);     // apply immediately so running effects feel it next frame
+    config_save();
 }
 
 void config_set_startup(startup_mode_t mode, effect_id_t e, uint16_t interval_s) {

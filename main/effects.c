@@ -22,6 +22,9 @@ static const effect_id_t RANDOM_POOL[] = {
     EFFECT_SOLID, EFFECT_RAIN, EFFECT_FIRE, EFFECT_RAINBOW,
     EFFECT_RADIAL, EFFECT_BALLS, EFFECT_CHASE, EFFECT_PLASMA,
     EFFECT_PINGPONG, EFFECT_FIREWORKS, EFFECT_MATRIX, EFFECT_GALAXY,
+    EFFECT_SPIRAL, EFFECT_RIPPLE, EFFECT_WARP,
+    EFFECT_AURORA, EFFECT_LIGHTNING, EFFECT_BREAKOUT,
+    EFFECT_PULSE, EFFECT_TETRIS, EFFECT_PENDULUM,
 };
 #define RANDOM_POOL_N  (sizeof(RANDOM_POOL) / sizeof(RANDOM_POOL[0]))
 
@@ -67,6 +70,15 @@ static const effect_vtable_t *vtable_for(effect_id_t id) {
         case EFFECT_FIREWORKS:   return &g_effect_fireworks;
         case EFFECT_MATRIX:      return &g_effect_matrix;
         case EFFECT_GALAXY:      return &g_effect_galaxy;
+        case EFFECT_SPIRAL:      return &g_effect_spiral;
+        case EFFECT_RIPPLE:      return &g_effect_ripple;
+        case EFFECT_WARP:        return &g_effect_warp;
+        case EFFECT_AURORA:      return &g_effect_aurora;
+        case EFFECT_LIGHTNING:   return &g_effect_lightning;
+        case EFFECT_BREAKOUT:    return &g_effect_breakout;
+        case EFFECT_PULSE:       return &g_effect_pulse;
+        case EFFECT_TETRIS:      return &g_effect_tetris;
+        case EFFECT_PENDULUM:    return &g_effect_pendulum;
         default:                 return &g_effect_off;
     }
 }

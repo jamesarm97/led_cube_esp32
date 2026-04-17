@@ -1,6 +1,7 @@
 #include "effects.h"
 #include "render.h"
 #include "cube.h"
+#include "orient.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -36,9 +37,21 @@ static void palette(uint8_t t, uint8_t *r, uint8_t *g, uint8_t *b) {
     }
 }
 
+// Corner-up fire: per-pixel heat field over the WHOLE cube, keyed on the
+// BFS distance from the bottom corner. The bottom corner cluster is the
+// hot seed; heat propagates outward and eventually decays at the top
+// corner. Draws a spark mask shaped by distance-to-bottom-pole so the
+// flame blooms upward along the 3 lower faces, across the hex equator,
+// and tapers near the top corner.
+static uint8_t s_cheat[CUBE_FACE_COUNT][8][8];
+
 static void fire_enter(void) {
     memset(s_heat, 0, sizeof(s_heat));
+    memset(s_cheat, 0, sizeof(s_cheat));
     s_smoke_phase = 0;
+    if (orient_get() == ORIENT_CORNER_UP) {
+        orient_build_flow_from_bottom();
+    }
 }
 
 // Draw rotating smoke on the TOP face: two bright "heads" on a ring around
@@ -81,11 +94,86 @@ static void draw_smoke(float dt) {
     }
 }
 
+// Corner-up fire: heat spreads outward from the bottom corner cluster,
+// each cell's temperature propagates to neighbors with higher BFS distance
+// ("rising"), and we apply cooling plus random sparks at the seed cells.
+static void corner_fire_step(uint8_t intensity, uint8_t cooling) {
+    // 1. Cool every cell.
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                uint8_t c = (rand_u8() % (cooling + 2));
+                s_cheat[f][x][y] = (s_cheat[f][x][y] > c) ? (s_cheat[f][x][y] - c) : 0;
+            }
+        }
+    }
+    // 2. Heat rises: each cell's new value is pulled FROM its upstream
+    //    neighbors (cells closer to the bottom seed — BFS distance one less
+    //    than self). That means heat propagates *away* from the bottom
+    //    corner, toward the top corner — classic fire rising.
+    static uint8_t next_heat[CUBE_FACE_COUNT][8][8];
+    static const int DX[4] = {+1, -1, 0, 0};
+    static const int DY[4] = {0, 0, +1, -1};
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                int16_t cd = orient_flow_dist[f][x][y];
+                int sum = 0, count = 0;
+                for (int d = 0; d < 4; d++) {
+                    int nx = x + DX[d], ny = y + DY[d];
+                    cube_face_t nf = (cube_face_t)f;
+                    if (nx < 0 || nx > 7 || ny < 0 || ny > 7) {
+                        if (!cube_step_over_edge(&nf, &nx, &ny)) continue;
+                    }
+                    if (orient_flow_dist[nf][nx][ny] == cd - 1) {
+                        sum += s_cheat[nf][nx][ny];
+                        count++;
+                    }
+                }
+                if (count == 0) {
+                    // Seed cell — keep its own current value (dies down only via cooling).
+                    next_heat[f][x][y] = s_cheat[f][x][y];
+                } else {
+                    int avg = sum / count;
+                    // Blend 30% self + 70% upstream for a natural rise.
+                    next_heat[f][x][y] = (uint8_t)((s_cheat[f][x][y] * 30 + avg * 70) / 100);
+                }
+            }
+        }
+    }
+    memcpy(s_cheat, next_heat, sizeof(s_cheat));
+
+    // 3. Sparks at the bottom corner cluster (seeds).
+    for (int i = 0; i < orient_flow_seed_count; i++) {
+        orient_cell_t s = orient_flow_seeds[i];
+        if ((rand_u8() % 256) < (intensity / 2 + 40)) {
+            uint8_t spark = 200 + (rand_u8() & 0x3F);
+            s_cheat[s.face][s.x][s.y] = spark;
+        }
+    }
+
+    // 4. Draw palette from heat field.
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                uint8_t r, g, b;
+                palette(s_cheat[f][x][y], &r, &g, &b);
+                render_set((cube_face_t)f, x, y, r, g, b);
+            }
+        }
+    }
+}
+
 static void fire_step(float dt) {
     config_lock();
     uint8_t intensity = config_get()->fire_intensity;
     uint8_t cooling   = config_get()->fire_cooling;
     config_unlock();
+
+    if (orient_get() == ORIENT_CORNER_UP) {
+        corner_fire_step(intensity, cooling);
+        return;
+    }
 
     // For each side face: cool, rise (copy row+1 <- row, with some blending),
     // and inject sparks at the bottom.

@@ -25,46 +25,52 @@ static int s_face_to_panel[CUBE_FACE_COUNT]; // inverse of panel_map, -1 if unma
 // For each face/edge we list (neighbor_face, neighbor_edge, flip). `flip`
 // indicates whether the coordinate along the shared edge is reversed when
 // crossing the seam.
+// Adjacencies were re-derived from pixel 3D positions on the cube surface
+// (see orient_pixel_pos3d). Every entry pairs two face-local edges that
+// occupy the same physical cube edge, and the `flip` flag records whether
+// the along-axis direction reverses when crossing the seam. Pairs are
+// reciprocal: if TOP.EDGE_LEFT -> WEST.EDGE_TOP then WEST.EDGE_TOP ->
+// TOP.EDGE_LEFT with the same flip.
 static const cube_adj_t s_adj[CUBE_FACE_COUNT][4] = {
-    // TOP. Looking down: x=east, y=south.
+    // TOP. x=east, y=south.
     [FACE_TOP] = {
-        [EDGE_TOP]    = { FACE_NORTH, EDGE_TOP,    true  }, // top of TOP meets top of NORTH, reversed along x
-        [EDGE_BOTTOM] = { FACE_SOUTH, EDGE_TOP,    false }, // bottom of TOP meets top of SOUTH
-        [EDGE_LEFT]   = { FACE_WEST,  EDGE_TOP,    false }, // left of TOP meets top of WEST
-        [EDGE_RIGHT]  = { FACE_EAST,  EDGE_TOP,    true  }, // right of TOP meets top of EAST, reversed along y
+        [EDGE_TOP]    = { FACE_NORTH, EDGE_TOP,    true  }, // TOP(x,0)<->NORTH(7-x,0) along east-north edge
+        [EDGE_BOTTOM] = { FACE_SOUTH, EDGE_TOP,    false }, // TOP(x,7)<->SOUTH(x,0)
+        [EDGE_LEFT]   = { FACE_WEST,  EDGE_TOP,    true  }, // TOP(0,y)<->WEST(7-y,0)
+        [EDGE_RIGHT]  = { FACE_EAST,  EDGE_TOP,    false }, // TOP(7,y)<->EAST(y,0)
     },
-    // BOTTOM. Looking up from below: x=east, y=north.
+    // BOTTOM. x=east, y=north (y=0 is south).
     [FACE_BOTTOM] = {
-        [EDGE_TOP]    = { FACE_SOUTH, EDGE_BOTTOM, true  },
-        [EDGE_BOTTOM] = { FACE_NORTH, EDGE_BOTTOM, false },
-        [EDGE_LEFT]   = { FACE_WEST,  EDGE_BOTTOM, true  },
-        [EDGE_RIGHT]  = { FACE_EAST,  EDGE_BOTTOM, false },
+        [EDGE_TOP]    = { FACE_SOUTH, EDGE_BOTTOM, false }, // BOTTOM(x,0)<->SOUTH(x,7)
+        [EDGE_BOTTOM] = { FACE_NORTH, EDGE_BOTTOM, true  }, // BOTTOM(x,7)<->NORTH(7-x,7)
+        [EDGE_LEFT]   = { FACE_WEST,  EDGE_BOTTOM, false }, // BOTTOM(0,y)<->WEST(y,7)
+        [EDGE_RIGHT]  = { FACE_EAST,  EDGE_BOTTOM, true  }, // BOTTOM(7,y)<->EAST(7-y,7)
     },
-    // NORTH. Facing north from outside: x=west, y=down.
+    // NORTH. x=west, y=down (x=0 is east, x=7 is west).
     [FACE_NORTH] = {
         [EDGE_TOP]    = { FACE_TOP,    EDGE_TOP,    true  },
-        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_BOTTOM, false },
-        [EDGE_LEFT]   = { FACE_EAST,   EDGE_RIGHT,  false },
-        [EDGE_RIGHT]  = { FACE_WEST,   EDGE_LEFT,   false },
+        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_BOTTOM, true  },
+        [EDGE_LEFT]   = { FACE_EAST,   EDGE_LEFT,   false }, // NE vertical: NORTH(0,y)<->EAST(0,y)
+        [EDGE_RIGHT]  = { FACE_WEST,   EDGE_RIGHT,  false }, // NW vertical: NORTH(7,y)<->WEST(7,y)
     },
-    // SOUTH. Facing south from outside: x=east, y=down.
+    // SOUTH. x=east, y=down.
     [FACE_SOUTH] = {
         [EDGE_TOP]    = { FACE_TOP,    EDGE_BOTTOM, false },
-        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_TOP,    true  },
-        [EDGE_LEFT]   = { FACE_WEST,   EDGE_RIGHT,  false },
-        [EDGE_RIGHT]  = { FACE_EAST,   EDGE_LEFT,   false },
+        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_TOP,    false },
+        [EDGE_LEFT]   = { FACE_WEST,   EDGE_LEFT,   false }, // SW vertical: SOUTH(0,y)<->WEST(0,y)
+        [EDGE_RIGHT]  = { FACE_EAST,   EDGE_RIGHT,  false }, // SE vertical: SOUTH(7,y)<->EAST(7,y)
     },
-    // EAST. Facing east from outside: x=south, y=down.
+    // EAST. x=south, y=down (x=0 is north, x=7 is south).
     [FACE_EAST] = {
-        [EDGE_TOP]    = { FACE_TOP,    EDGE_RIGHT,  true  },
-        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_RIGHT,  false },
+        [EDGE_TOP]    = { FACE_TOP,    EDGE_RIGHT,  false },
+        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_RIGHT,  true  },
         [EDGE_LEFT]   = { FACE_NORTH,  EDGE_LEFT,   false },
         [EDGE_RIGHT]  = { FACE_SOUTH,  EDGE_RIGHT,  false },
     },
-    // WEST. Facing west from outside: x=north, y=down.
+    // WEST. x=north, y=down (x=0 is south, x=7 is north).
     [FACE_WEST] = {
-        [EDGE_TOP]    = { FACE_TOP,    EDGE_LEFT,   false },
-        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_LEFT,   true  },
+        [EDGE_TOP]    = { FACE_TOP,    EDGE_LEFT,   true  },
+        [EDGE_BOTTOM] = { FACE_BOTTOM, EDGE_LEFT,   false },
         [EDGE_LEFT]   = { FACE_SOUTH,  EDGE_LEFT,   false },
         [EDGE_RIGHT]  = { FACE_NORTH,  EDGE_RIGHT,  false },
     },
@@ -85,11 +91,11 @@ static const seam_t s_seams[] = {
     { FACE_BOTTOM, EDGE_BOTTOM, FACE_NORTH, EDGE_BOTTOM, 0xC0, 0x00, 0xFF }, // purple: BOTTOM<->NORTH
     { FACE_BOTTOM, EDGE_LEFT,   FACE_WEST,  EDGE_BOTTOM, 0x00, 0xFF, 0xFF }, // cyan  : BOTTOM<->WEST
     { FACE_BOTTOM, EDGE_RIGHT,  FACE_EAST,  EDGE_BOTTOM, 0xFF, 0x00, 0xFF }, // magenta:BOTTOM<->EAST
-    // Four vertical edges.
-    { FACE_NORTH, EDGE_LEFT,   FACE_EAST,  EDGE_RIGHT,  0xFF, 0x80, 0x80 }, // pink  : NE corner
-    { FACE_NORTH, EDGE_RIGHT,  FACE_WEST,  EDGE_LEFT,   0x80, 0xFF, 0x80 }, // lime  : NW corner
-    { FACE_SOUTH, EDGE_LEFT,   FACE_WEST,  EDGE_RIGHT,  0x80, 0x80, 0xFF }, // lavender: SW corner
-    { FACE_SOUTH, EDGE_RIGHT,  FACE_EAST,  EDGE_LEFT,   0xFF, 0xFF, 0x80 }, // pale yellow: SE corner
+    // Four vertical edges. Pairs match the corrected s_adj above.
+    { FACE_NORTH, EDGE_LEFT,   FACE_EAST,  EDGE_LEFT,   0xFF, 0x80, 0x80 }, // pink     : NE corner
+    { FACE_NORTH, EDGE_RIGHT,  FACE_WEST,  EDGE_RIGHT,  0x80, 0xFF, 0x80 }, // lime     : NW corner
+    { FACE_SOUTH, EDGE_LEFT,   FACE_WEST,  EDGE_LEFT,   0x80, 0x80, 0xFF }, // lavender : SW corner
+    { FACE_SOUTH, EDGE_RIGHT,  FACE_EAST,  EDGE_RIGHT,  0xFF, 0xFF, 0x80 }, // pale yellow: SE corner
 };
 
 // --- Calibration management ------------------------------------------------
@@ -140,8 +146,12 @@ int cube_logical_to_strip(cube_face_t face, int x, int y) {
     if (x < 0 || x >= 8 || y < 0 || y >= 8) return -1;
     int panel = s_face_to_panel[face];
     if (panel < 0) return -1;
+    // Apply horizontal flip first if the panel is mirrored on the cube
+    // (data-in lead on the opposite handedness from what a pure rotation
+    // can describe). Then apply the 4-way rotation.
+    int mx = s_calib.panel_mirror[panel] ? (7 - x) : x;
     int px, py;
-    rotate_xy(s_calib.panel_rot[panel], x, y, &px, &py);
+    rotate_xy(s_calib.panel_rot[panel], mx, y, &px, &py);
     int local = panel_xy_to_local(px, py, s_calib.serpentine);
     if (local < 0) return -1;
     return panel * CUBE_PANEL_PIXELS + local;

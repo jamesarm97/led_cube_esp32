@@ -1,6 +1,7 @@
 #include "effects.h"
 #include "render.h"
 #include "cube.h"
+#include "orient.h"
 
 #include <math.h>
 #include <string.h>
@@ -112,10 +113,169 @@ static void explode(rocket_t *rk) {
     rk->alive = false;
 }
 
+// -- Corner-up fireworks ----------------------------------------------------
+//
+// Cell-stepping fireworks driven by the shared orient BFS (from-bottom):
+//   - rockets spawn at a random bottom-corner seed pixel,
+//   - advance one BFS cell per tick toward higher dist (toward top corner),
+//   - detonate when their distance is within 3 steps of max_dist,
+//   - sparks are short-lived cell fades that spread from the detonation
+//     point by repeatedly picking a random 4-neighbor.
+//
+// This gives the same visual feel as the face-up version (rocket arc,
+// big bloom near the top) but correctly oriented for the corner pose
+// where a single side-face "up" doesn't exist.
+
+#define MAX_CROCKETS    4
+#define MAX_CSPARKS     72
+
+typedef struct {
+    bool    alive;
+    int8_t  face, x, y;
+    float   step_timer;
+    uint8_t r, g, b;
+} crocket_t;
+
+typedef struct {
+    bool    alive;
+    int8_t  face, x, y;
+    float   age;
+    float   life;
+    uint8_t r, g, b;
+} cspark_t;
+
+static crocket_t s_crockets[MAX_CROCKETS];
+static cspark_t  s_csparks[MAX_CSPARKS];
+static float     s_cspawn_timer;
+
+static void corner_random_color(uint8_t *r, uint8_t *g, uint8_t *b) {
+    static const uint8_t pal[8][3] = {
+        {255,  60,  60}, {255, 200,  40}, {255, 255,  80}, {120, 255,  80},
+        { 60, 255, 220}, { 80, 140, 255}, {220,  80, 255}, {255, 255, 255},
+    };
+    int i = esp_random() & 7;
+    *r = pal[i][0]; *g = pal[i][1]; *b = pal[i][2];
+}
+
+static void corner_spawn_rocket(void) {
+    for (int i = 0; i < MAX_CROCKETS; i++) {
+        if (s_crockets[i].alive) continue;
+        orient_cell_t s = orient_flow_seeds[esp_random() % orient_flow_seed_count];
+        s_crockets[i].alive = true;
+        s_crockets[i].face = s.face; s_crockets[i].x = s.x; s_crockets[i].y = s.y;
+        s_crockets[i].step_timer = 0;
+        corner_random_color(&s_crockets[i].r, &s_crockets[i].g, &s_crockets[i].b);
+        return;
+    }
+}
+
+static void corner_spawn_spark(int face, int x, int y,
+                               uint8_t r, uint8_t g, uint8_t b) {
+    for (int i = 0; i < MAX_CSPARKS; i++) {
+        if (s_csparks[i].alive) continue;
+        s_csparks[i].alive = true;
+        s_csparks[i].face = face; s_csparks[i].x = x; s_csparks[i].y = y;
+        s_csparks[i].age = 0;
+        s_csparks[i].life = 0.9f + rngf() * 0.7f;
+        s_csparks[i].r = r; s_csparks[i].g = g; s_csparks[i].b = b;
+        return;
+    }
+}
+
+static void corner_detonate(crocket_t *rk) {
+    // Scatter ~22 sparks by repeatedly walking random 4-neighbors from the
+    // rocket's position. Some scatter onto the 3 faces sharing the top
+    // corner; others stay near the rocket position.
+    for (int n = 0; n < 22; n++) {
+        int face = rk->face, x = rk->x, y = rk->y;
+        int walk = (esp_random() % 3) + 1;
+        for (int w = 0; w < walk; w++) {
+            static const int DX[4] = {+1, -1, 0, 0};
+            static const int DY[4] = {0, 0, +1, -1};
+            int d = esp_random() & 3;
+            int nx = x + DX[d], ny = y + DY[d];
+            cube_face_t nf = (cube_face_t)face;
+            if (nx < 0 || nx > 7 || ny < 0 || ny > 7) {
+                if (!cube_step_over_edge(&nf, &nx, &ny)) break;
+            }
+            face = nf; x = nx; y = ny;
+        }
+        corner_spawn_spark(face, x, y, rk->r, rk->g, rk->b);
+    }
+    rk->alive = false;
+}
+
 static void fireworks_enter(void) {
     memset(s_rockets, 0, sizeof(s_rockets));
     memset(s_sparks,  0, sizeof(s_sparks));
     s_spawn_timer = 0;
+
+    memset(s_crockets, 0, sizeof(s_crockets));
+    memset(s_csparks,  0, sizeof(s_csparks));
+    s_cspawn_timer = 0;
+    if (orient_get() == ORIENT_CORNER_UP) {
+        orient_build_flow_from_bottom();
+    }
+}
+
+static void corner_fireworks_step(float dt) {
+    if (dt > 0.05f) dt = 0.05f;
+
+    // Spawn rockets at a steady cadence.
+    s_cspawn_timer -= dt;
+    if (s_cspawn_timer <= 0) {
+        corner_spawn_rocket();
+        s_cspawn_timer = 0.55f + rngf() * 0.50f;
+    }
+
+    // Advance rockets one BFS cell per ~0.10s.
+    const float rocket_step_s = 0.095f;
+    for (int i = 0; i < MAX_CROCKETS; i++) {
+        crocket_t *rk = &s_crockets[i];
+        if (!rk->alive) continue;
+        rk->step_timer += dt;
+        while (rk->step_timer >= rocket_step_s) {
+            rk->step_timer -= rocket_step_s;
+            int n = orient_flow_next_count[rk->face][rk->x][rk->y];
+            int16_t cd = orient_flow_dist[rk->face][rk->x][rk->y];
+            // Detonate when we're close to the top corner (within 2 BFS
+            // steps of the maximum distance).
+            if (n == 0 || cd >= orient_flow_max_dist - 2) {
+                corner_detonate(rk);
+                break;
+            }
+            orient_cell_t nx = orient_flow_next[rk->face][rk->x][rk->y][esp_random() % n];
+            rk->face = nx.face; rk->x = nx.x; rk->y = nx.y;
+        }
+    }
+
+    // Age sparks.
+    for (int i = 0; i < MAX_CSPARKS; i++) {
+        cspark_t *sp = &s_csparks[i];
+        if (!sp->alive) continue;
+        sp->age += dt;
+        if (sp->age >= sp->life) sp->alive = false;
+    }
+
+    // --- Render ---
+    // Dim glow along the path of each live rocket (just the current cell +
+    // a dimmer echo one step back).
+    for (int i = 0; i < MAX_CROCKETS; i++) {
+        crocket_t *rk = &s_crockets[i];
+        if (!rk->alive) continue;
+        render_add((cube_face_t)rk->face, rk->x, rk->y, rk->r, rk->g, rk->b);
+    }
+    // Sparks fade with quadratic falloff.
+    for (int i = 0; i < MAX_CSPARKS; i++) {
+        cspark_t *sp = &s_csparks[i];
+        if (!sp->alive) continue;
+        float t = sp->age / sp->life;
+        float fade = (1 - t); fade *= fade;
+        render_add((cube_face_t)sp->face, sp->x, sp->y,
+                   (uint8_t)(sp->r * fade),
+                   (uint8_t)(sp->g * fade),
+                   (uint8_t)(sp->b * fade));
+    }
 }
 
 static void splat(cube_face_t face, float fx, float fy,
@@ -153,6 +313,11 @@ static void cross_seam(cube_face_t *face, float *x, float *y) {
 }
 
 static void fireworks_step(float dt) {
+    if (orient_get() == ORIENT_CORNER_UP) {
+        corner_fireworks_step(dt);
+        return;
+    }
+
     if (dt > 0.05f) dt = 0.05f;
 
     // Spawn cadence: ~1 rocket every 0.9 s, varied.

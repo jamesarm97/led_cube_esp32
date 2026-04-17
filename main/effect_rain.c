@@ -1,6 +1,7 @@
 #include "effects.h"
 #include "render.h"
 #include "cube.h"
+#include "orient.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -52,11 +53,41 @@ static float s_cloud_phase;
 static uint32_t rng_u32(void) { return esp_random(); }
 static float rng_unit(void)   { return (rng_u32() & 0xFFFFFF) / (float)0xFFFFFF; }
 
+// --- Corner-up rain ---------------------------------------------------------
+//
+// When the cube is in corner-up mode the "cloud" is the TOP+WEST+SOUTH
+// vertex (3 corner pixels). Drops spawn there and flow along the shared
+// orient BFS gradient until they reach the opposite vertex, where they
+// accumulate as puddle intensity. The visual vocabulary stays blue.
+
+#define MAX_CDROPS 28
+
+typedef struct {
+    bool     alive;
+    int8_t   face;
+    int8_t   x, y;
+    float    step_timer;
+    float    step_interval;
+} cdrop_t;
+
+static cdrop_t  s_cdrops[MAX_CDROPS];
+static uint8_t  s_cfade[CUBE_FACE_COUNT][8][8];
+static float    s_ccloud_phase;
+static float    s_cspawn_timer;
+
 static void rain_enter(void) {
     memset(s_drops, 0, sizeof(s_drops));
     memset(s_puddle, 0, sizeof(s_puddle));
     memset(s_cloud, 0, sizeof(s_cloud));
     s_cloud_phase = 0;
+
+    memset(s_cdrops, 0, sizeof(s_cdrops));
+    memset(s_cfade, 0, sizeof(s_cfade));
+    s_ccloud_phase = 0;
+    s_cspawn_timer = 0;
+    if (orient_get() == ORIENT_CORNER_UP) {
+        orient_build_flow_from_top();
+    }
 }
 
 // Cheap fBm-ish cloud update: advect a sparse set of gaussian bumps.
@@ -217,11 +248,139 @@ static void draw_scene(void) {
     }
 }
 
+static void corner_spawn_cdrop(void) {
+    for (int i = 0; i < MAX_CDROPS; i++) {
+        if (s_cdrops[i].alive) continue;
+        orient_cell_t seed = orient_flow_seeds[esp_random() % orient_flow_seed_count];
+        s_cdrops[i].alive = true;
+        s_cdrops[i].face  = seed.face;
+        s_cdrops[i].x     = seed.x;
+        s_cdrops[i].y     = seed.y;
+        s_cdrops[i].step_interval = 0.07f + rng_unit() * 0.11f;
+        s_cdrops[i].step_timer    = 0;
+        return;
+    }
+}
+
+static void corner_rain_step(float dt, uint8_t density, uint8_t speed) {
+    (void)speed;
+    s_ccloud_phase += dt * 0.9f;
+
+    // Spawn rate scales with density and caps the number of in-flight drops.
+    s_cspawn_timer -= dt;
+    while (s_cspawn_timer <= 0) {
+        if (rng_unit() < (density / 255.0f)) corner_spawn_cdrop();
+        s_cspawn_timer += 0.05f + rng_unit() * 0.05f;
+    }
+
+    // Advance each drop along the BFS flow. When the drop reaches a terminal
+    // (the opposite corner cluster) we deposit a puddle there and retire it.
+    for (int i = 0; i < MAX_CDROPS; i++) {
+        cdrop_t *d = &s_cdrops[i];
+        if (!d->alive) continue;
+        d->step_timer += dt;
+        while (d->step_timer >= d->step_interval) {
+            d->step_timer -= d->step_interval;
+            s_cfade[d->face][d->x][d->y] = 255;
+            int n = orient_flow_next_count[d->face][d->x][d->y];
+            if (n == 0) {
+                // Arrived at the bottom corner — deposit puddle, retire.
+                int pv = s_puddle[d->face][d->x][d->y] + 180;
+                s_puddle[d->face][d->x][d->y] = (pv > 255) ? 255 : (uint8_t)pv;
+                d->alive = false;
+                break;
+            }
+            orient_cell_t nx = orient_flow_next[d->face][d->x][d->y][esp_random() % n];
+            d->face = nx.face;
+            d->x = nx.x;
+            d->y = nx.y;
+            s_cfade[d->face][d->x][d->y] = 255;
+        }
+    }
+
+    // Fade the blue trail.
+    int decay = (int)(dt * 220.0f);
+    if (decay < 1) decay = 1;
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                int v = s_cfade[f][x][y] - decay;
+                s_cfade[f][x][y] = (v < 0) ? 0 : (uint8_t)v;
+            }
+        }
+    }
+
+    // Puddles decay slower than trails — puddles linger.
+    int pdecay = (int)(dt * 50.0f);
+    if (pdecay < 1) pdecay = 1;
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                int v = s_puddle[f][x][y] - pdecay;
+                s_puddle[f][x][y] = (v < 0) ? 0 : (uint8_t)v;
+            }
+        }
+    }
+
+    // --- Render ---
+
+    // 1. Cloud pulse at the top corner — a gentle breathing of dark blue on
+    //    the three seed pixels and their immediate neighbors (cells with
+    //    flow_dist <= 2).
+    float breathe = 0.55f + 0.45f * sinf(s_ccloud_phase);
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                int16_t d = orient_flow_dist[f][x][y];
+                if (d <= 2) {
+                    uint8_t v = (uint8_t)((3 - d) * 30 * breathe);
+                    render_set((cube_face_t)f, x, y, 0, v / 4, v);
+                }
+            }
+        }
+    }
+
+    // 2. Drop trails: head near-white, body pure blue with quadratic falloff.
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                uint8_t v = s_cfade[f][x][y];
+                if (!v) continue;
+                uint8_t r, g, b;
+                if (v > 220) {
+                    r = v - 200; g = v - 120; b = v;
+                } else {
+                    int v2 = (int)v * v / 255;
+                    r = 0; g = (uint8_t)(v2 / 4); b = (uint8_t)v2;
+                }
+                render_add((cube_face_t)f, x, y, r, g, b);
+            }
+        }
+    }
+
+    // 3. Puddles: light blue at the bottom corner cluster, fading outward.
+    for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                uint8_t v = s_puddle[f][x][y];
+                if (!v) continue;
+                uint8_t r = v / 4, g = v / 2, b = v;
+                render_add((cube_face_t)f, x, y, r, g, b);
+            }
+        }
+    }
+}
+
 static void rain_step(float dt) {
     config_lock();
     uint8_t density = config_get()->rain_density;
     uint8_t speed   = config_get()->rain_speed;
     config_unlock();
+
+    if (orient_get() == ORIENT_CORNER_UP) {
+        corner_rain_step(dt, density, speed);
+        return;
+    }
 
     advance_cloud(dt);
     spawn_drop(density);

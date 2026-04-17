@@ -1,0 +1,20 @@
+# ESP-IDF build artifacts
+build/
+.cache/
+dependencies.lock
+managed_components/
+
+# Local sdkconfig — regenerate from sdkconfig.defaults per-developer
+sdkconfig
+sdkconfig.old
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc

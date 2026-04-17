@@ -28,6 +28,23 @@
 static const float K_PITCH = 2.0f;   // how tight the spiral is (bigger = tighter)
 static const float GAMMA   = 2.2f;   // trail falloff exponent
 
+// Differential rotation: inner pixels spin faster than outer ones, mimicking
+// a real galaxy's rotation curve. omega(r) = 1 + K / (r + eps).
+static const float DIFF_K   = 1.8f;
+static const float DIFF_EPS = 0.8f;
+
+// Each face has a distinct "edge" hue; the center is a consistent deep
+// purple. Hue is HSV-space [0..1]: 0.5≈cyan, 0.62≈blue, 0.72≈violet, 0.82≈magenta.
+static const float CENTER_HUE = 0.82f;               // deep purple/magenta
+static const float EDGE_HUE[CUBE_FACE_COUNT] = {
+    [FACE_TOP]    = 0.58f,  // azure
+    [FACE_BOTTOM] = 0.62f,  // blue
+    [FACE_NORTH]  = 0.50f,  // cyan
+    [FACE_SOUTH]  = 0.70f,  // blue-violet
+    [FACE_EAST]   = 0.48f,  // teal
+    [FACE_WEST]   = 0.76f,  // violet
+};
+
 static float s_phase;
 
 static void hsv_to_rgb(float h, float s, float v,
@@ -58,8 +75,8 @@ static void galaxy_step(float dt) {
     uint8_t speed = config_get()->rainbow_speed;
     config_unlock();
 
-    // Advance phase. Positive = counter-clockwise on TOP face.
-    s_phase += dt * (0.35f + speed / 255.0f * 1.25f);
+    // Overall spin is roughly twice as fast as before. Positive = CCW on TOP.
+    s_phase += dt * (0.7f + speed / 255.0f * 2.5f);
 
     for (int f = 0; f < CUBE_FACE_COUNT; f++) {
         // BOTTOM spins the other way so top/bottom together read as a disk.
@@ -74,9 +91,15 @@ static void galaxy_step(float dt) {
                 if (r < 0.001f) r = 0.001f;
                 float theta = atan2f(dy, dx);
 
+                // Differential rotation: the per-pixel angular velocity
+                // factor grows as r shrinks, so the core spins noticeably
+                // faster than the rim. This distorts a rigid log-spiral but
+                // that distortion is *what a galaxy actually does* — arms
+                // wind up tighter over time in the center.
+                float omega = 1.0f + DIFF_K / (r + DIFF_EPS);
                 float arm_t = theta * N_ARMS
                             + K_PITCH * logf(r + 0.5f)
-                            - spin_dir * face_phase;
+                            - spin_dir * face_phase * omega;
 
                 // Normalize arm_t / (2pi) into a [0, 1) "position behind the arm head".
                 float frac = arm_t / 6.2832f;
@@ -92,11 +115,15 @@ static void galaxy_step(float dt) {
                 if (intensity > 1.0f) intensity = 1.0f;
                 if (intensity < 0.02f) continue;
 
-                // Color: bluish-white core, shifting to reddish-purple on the
-                // outer arm tips (classic galaxy palette).
-                float hue = 0.62f - 0.12f * (r / 5.0f);  // 0.62=blue -> 0.50=cyan-ish
+                // Color: lerp from CENTER_HUE (deep purple) at r=0 to the
+                // face's distinct EDGE_HUE at r=5. Saturation also climbs
+                // with r so the core reads cleaner/whiter before blooming
+                // to a saturated edge hue.
+                float t = r / 5.0f; if (t > 1) t = 1;
+                float hue = CENTER_HUE + (EDGE_HUE[f] - CENTER_HUE) * t;
+                float sat = 0.55f + 0.45f * t;
                 uint8_t rr, gg, bb;
-                hsv_to_rgb(hue, 0.6f + 0.4f * (r / 5.0f), intensity, &rr, &gg, &bb);
+                hsv_to_rgb(hue, sat, intensity, &rr, &gg, &bb);
                 render_set((cube_face_t)f, x, y, rr, gg, bb);
             }
         }

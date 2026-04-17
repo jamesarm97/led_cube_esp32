@@ -54,6 +54,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .calib-table { width: 100%; margin-top: .75rem; font-size: .85rem; border-collapse: collapse; }
 .calib-table th, .calib-table td { padding: .35rem .5rem; text-align: left; border-bottom: 1px solid #262836; }
 .calib-table th { color: var(--muted); font-weight: 600; }
+.calib-table tr.active-row td { background: #1b2436; }
 
 .hidden { display: none !important; }
 output { color: var(--muted); font-variant-numeric: tabular-nums; }
