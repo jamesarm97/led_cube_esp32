@@ -28,6 +28,7 @@ idf_component_register(
         "effect_pulse.c"
         "effect_tetris.c"
         "effect_pendulum.c"
+        "effect_disco.c"
         "net.c"
         "http.c"
         "dns_captive.c"

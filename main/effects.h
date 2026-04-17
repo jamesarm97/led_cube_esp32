@@ -38,6 +38,7 @@ extern const effect_vtable_t g_effect_breakout;
 extern const effect_vtable_t g_effect_pulse;
 extern const effect_vtable_t g_effect_tetris;
 extern const effect_vtable_t g_effect_pendulum;
+extern const effect_vtable_t g_effect_disco;
 
 // Random mode: cycle through visual effects every N seconds. Interval comes
 // from config_get()->random_interval_s. Automatically disables when the user

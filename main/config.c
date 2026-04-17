@@ -41,6 +41,8 @@ static void apply_defaults(app_config_t *c) {
     c->fire_cooling     = 55;
     c->rainbow_speed    = 80;
 
+    c->breakout_single_pixel = 0;
+
     c->calib_step       = 0;
 
     c->startup_mode       = STARTUP_LAST;
@@ -129,6 +131,7 @@ void config_init(void) {
         nvs_load_u8(h, "fire_i", &s_cfg.fire_intensity);
         nvs_load_u8(h, "fire_c", &s_cfg.fire_cooling);
         nvs_load_u8(h, "rbow_s", &s_cfg.rainbow_speed);
+        nvs_load_u8(h, "bk_1px", &s_cfg.breakout_single_pixel);
 
         nvs_load_str(h, "ap_ssid", s_cfg.ap_ssid, sizeof(s_cfg.ap_ssid));
         nvs_load_str(h, "ap_pass", s_cfg.ap_pass, sizeof(s_cfg.ap_pass));
@@ -193,6 +196,7 @@ void config_save(void) {
     nvs_set_u8  (h, "fire_i",     s_cfg.fire_intensity);
     nvs_set_u8  (h, "fire_c",     s_cfg.fire_cooling);
     nvs_set_u8  (h, "rbow_s",     s_cfg.rainbow_speed);
+    nvs_set_u8  (h, "bk_1px",     s_cfg.breakout_single_pixel);
     nvs_set_str (h, "ap_ssid",    s_cfg.ap_ssid);
     nvs_set_str (h, "ap_pass",    s_cfg.ap_pass);
     nvs_set_u8  (h, "ap_chan",    s_cfg.ap_channel);
@@ -267,6 +271,13 @@ void config_set_solid(uint8_t r, uint8_t g, uint8_t b) {
     config_save();
 }
 
+void config_set_breakout_single_pixel(uint8_t on) {
+    config_lock();
+    s_cfg.breakout_single_pixel = on ? 1 : 0;
+    config_unlock();
+    config_save();
+}
+
 void config_swap_east_west(void) {
     config_lock();
     int e = -1, w = -1;
@@ -313,6 +324,7 @@ const char *effect_name(effect_id_t e) {
         case EFFECT_PULSE:       return "pulse";
         case EFFECT_TETRIS:      return "tetris";
         case EFFECT_PENDULUM:    return "pendulum";
+        case EFFECT_DISCO:       return "disco";
         default:                 return "?";
     }
 }
@@ -344,6 +356,7 @@ effect_id_t effect_from_name(const char *s) {
     if (!strcmp(s, "pulse"))      return EFFECT_PULSE;
     if (!strcmp(s, "tetris"))     return EFFECT_TETRIS;
     if (!strcmp(s, "pendulum"))   return EFFECT_PENDULUM;
+    if (!strcmp(s, "disco"))      return EFFECT_DISCO;
     return EFFECT_OFF;
 }
 

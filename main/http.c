@@ -127,6 +127,7 @@ static esp_err_t h_state(httpd_req_t *req) {
         "\"rain\":{\"density\":%u,\"speed\":%u},"
         "\"fire\":{\"intensity\":%u,\"cooling\":%u},"
         "\"rainbow\":{\"speed\":%u},"
+        "\"breakout\":{\"single_pixel\":%s},"
         "\"panel_map\":[%d,%d,%d,%d,%d,%d],"
         "\"panel_rot\":[%u,%u,%u,%u,%u,%u],"
         "\"panel_mirror\":[%u,%u,%u,%u,%u,%u],"
@@ -141,6 +142,7 @@ static esp_err_t h_state(httpd_req_t *req) {
         c->rain_density, c->rain_speed,
         c->fire_intensity, c->fire_cooling,
         c->rainbow_speed,
+        c->breakout_single_pixel ? "true" : "false",
         c->calib.panel_map[0], c->calib.panel_map[1], c->calib.panel_map[2],
         c->calib.panel_map[3], c->calib.panel_map[4], c->calib.panel_map[5],
         c->calib.panel_rot[0], c->calib.panel_rot[1], c->calib.panel_rot[2],
@@ -217,6 +219,16 @@ static esp_err_t h_brightness(httpd_req_t *req) {
     int v = json_int(body, "value", -1);
     if (v < 0 || v > 255) return json_err(req, 400, "value");
     config_set_brightness((uint8_t)v);
+    return json_ok(req);
+}
+
+// POST /api/breakout  body: { "single_pixel": true|false }
+static esp_err_t h_breakout(httpd_req_t *req) {
+    char body[64];
+    if (read_body(req, body, sizeof(body)) < 0) return json_err(req, 400, "read");
+    const char *v = json_find(body, "single_pixel");
+    bool on = v && (v[0] == 't');
+    config_set_breakout_single_pixel(on ? 1 : 0);
     return json_ok(req);
 }
 
@@ -335,6 +347,7 @@ static const httpd_uri_t s_uris[] = {
     { .uri="/api/effect",   .method=HTTP_POST, .handler=h_effect   },
     { .uri="/api/brightness",.method=HTTP_POST,.handler=h_brightness },
     { .uri="/api/solid",    .method=HTTP_POST, .handler=h_solid    },
+    { .uri="/api/breakout", .method=HTTP_POST, .handler=h_breakout },
     { .uri="/api/calib/step",.method=HTTP_POST,.handler=h_calib_step },
     { .uri="/api/calib/face",.method=HTTP_POST,.handler=h_calib_face },
     { .uri="/api/calib/rot",.method=HTTP_POST, .handler=h_calib_rot },

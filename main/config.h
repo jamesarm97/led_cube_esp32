@@ -35,6 +35,7 @@ typedef enum {
     EFFECT_PULSE,       // concentric pulses emanating from the top pole
     EFFECT_TETRIS,      // tetrominoes fall on the 4 side faces, stack, clear
     EFFECT_PENDULUM,    // swinging pendulums — one per side face
+    EFFECT_DISCO,       // cube-shaped disco ball: rotating vertical color stripes with fade trail
     EFFECT_COUNT,
 } effect_id_t;
 
@@ -62,6 +63,9 @@ typedef struct {
     uint8_t      fire_intensity;    // 0..255
     uint8_t      fire_cooling;      // 0..255
     uint8_t      rainbow_speed;     // 0..255
+
+    // Per-effect style options.
+    uint8_t      breakout_single_pixel; // 0 = bilinear-splat ball (default), 1 = crisp single pixel
 
     // Calibration runtime state (not persisted).
     uint8_t      calib_step;        // 0..5 which physical panel we're lighting
@@ -101,6 +105,9 @@ void config_set_panel_rot(int physical_panel, uint8_t rot);
 void config_set_panel_mirror(int physical_panel, uint8_t mirror);
 void config_set_calibrated(bool calibrated);
 void config_set_solid(uint8_t r, uint8_t g, uint8_t b);
+
+// Toggle the breakout effect's ball-draw style. 0 = bilinear splat; 1 = crisp single pixel.
+void config_set_breakout_single_pixel(uint8_t on);
 
 // Swap which physical panel is mapped to FACE_EAST vs FACE_WEST. Handy when
 // the user realizes post-calibration that the two are 180° reversed —

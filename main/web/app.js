@@ -23,6 +23,7 @@ const EFFECTS = [
   { id: "pulse",      label: "Pulse"     },
   { id: "tetris",     label: "Tetris"    },
   { id: "pendulum",   label: "Pendulum"  },
+  { id: "disco",      label: "Disco"     },
   { id: "calib_face", label: "Face-ID"   },
   { id: "calib_edge", label: "Edge test" },
   { id: "face_test",  label: "QA test"   },
@@ -53,9 +54,18 @@ function render() {
   renderEffects();
   renderBrightness();
   renderSolid();
+  renderBreakout();
   renderOrientation();
   renderStartup();
   renderCalib();
+}
+
+function renderBreakout() {
+  const card = document.getElementById("breakout-card");
+  card.classList.toggle("hidden", state.effect !== "breakout");
+  const cb = document.getElementById("breakout-single");
+  cb.checked = !!(state.breakout && state.breakout.single_pixel);
+  cb.onchange = () => api("/api/breakout", { single_pixel: cb.checked });
 }
 
 function renderOrientation() {

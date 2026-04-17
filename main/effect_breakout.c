@@ -138,7 +138,7 @@ static void step_board(board_t *b, float dt) {
     }
 }
 
-static void draw_board(const board_t *b, cube_face_t face) {
+static void draw_board(const board_t *b, cube_face_t face, bool single_pixel_ball) {
     for (int r = 0; r < BRICK_ROWS; r++) {
         for (int c = 0; c < BRICK_COLS; c++) {
             if (!b->bricks[r][c]) continue;
@@ -157,24 +157,38 @@ static void draw_board(const board_t *b, cube_face_t face) {
         if (px < 0 || px > 7) continue;
         render_set(face, px, 7, 180, 180, 200);
     }
-    int ix = (int)floorf(b->ball_x), iy = (int)floorf(b->ball_y);
-    float frx = b->ball_x - ix, fry = b->ball_y - iy;
-    for (int dy = 0; dy <= 1; dy++) {
-        for (int dx = 0; dx <= 1; dx++) {
-            int px = ix + dx, py = iy + dy;
-            if (px < 0 || px > 7 || py < 0 || py > 7) continue;
-            float w = (dx ? frx : 1 - frx) * (dy ? fry : 1 - fry);
-            uint8_t v = (uint8_t)(w * 255);
-            render_add(face, px, py, v, v, v);
+    if (single_pixel_ball) {
+        // Snap to nearest pixel — crisp, retro look.
+        int ix = (int)roundf(b->ball_x);
+        int iy = (int)roundf(b->ball_y);
+        if (ix >= 0 && ix <= 7 && iy >= 0 && iy <= 7)
+            render_add(face, ix, iy, 255, 255, 255);
+    } else {
+        // Bilinear splat across up to 4 pixels — smooth sub-pixel motion.
+        int ix = (int)floorf(b->ball_x), iy = (int)floorf(b->ball_y);
+        float frx = b->ball_x - ix, fry = b->ball_y - iy;
+        for (int dy = 0; dy <= 1; dy++) {
+            for (int dx = 0; dx <= 1; dx++) {
+                int px = ix + dx, py = iy + dy;
+                if (px < 0 || px > 7 || py < 0 || py > 7) continue;
+                float w = (dx ? frx : 1 - frx) * (dy ? fry : 1 - fry);
+                uint8_t v = (uint8_t)(w * 255);
+                render_add(face, px, py, v, v, v);
+            }
         }
     }
 }
 
 static void breakout_step(float dt) {
     if (dt > 0.05f) dt = 0.05f;
+
+    config_lock();
+    bool single_px = config_get()->breakout_single_pixel != 0;
+    config_unlock();
+
     for (int f = 0; f < CUBE_FACE_COUNT; f++) {
         step_board(&s_boards[f], dt);
-        draw_board(&s_boards[f], (cube_face_t)f);
+        draw_board(&s_boards[f], (cube_face_t)f, single_px);
     }
 }
 
