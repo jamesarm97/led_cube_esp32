@@ -134,6 +134,17 @@
     </table>
   </section>
 
+  <section class="card">
+    <h2>Firmware update</h2>
+    <p class="hint">Upload a compiled firmware <code>.bin</code> (usually <code>build/matrixcube.bin</code>). Transfer takes a few seconds over WiFi; the cube will reboot into the new firmware automatically. Re-join the MatrixCube WiFi afterward.</p>
+    <div class="calib-row">
+      <input id="ota-file" type="file" accept=".bin">
+      <button id="ota-upload">Upload</button>
+    </div>
+    <progress id="ota-progress" value="0" max="100" class="hidden" style="width:100%"></progress>
+    <div id="ota-status" class="hint"></div>
+  </section>
+
   <script src="/app.js"></script>
 </body>
 </html>

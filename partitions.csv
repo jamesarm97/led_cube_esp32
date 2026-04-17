@@ -1,5 +1,22 @@
+# OTA-capable layout for the 4 MB ESP32-S3 (N4R2).
+#
+#   0x00000  bootloader
+#   0x08000  partition table
+#   0x09000  NVS         (24 KB)  — app config, calibration; unchanged from v1
+#                                  so existing calibrations survive the reflash.
+#   0x0F000  otadata     (8 KB)   — tracks which OTA slot to boot.
+#   0x11000  phy_init    (4 KB)
+#   0x20000  ota_0       (1.5 MB) — first firmware slot; a fresh flash lands here.
+#   0x1A0000 ota_1       (1.5 MB) — second slot; OTA uploads alternate.
+#   0x320000 storage     (256 KB) — reserved for future user data.
+#   0x360000 (end)
+#
+# App partitions must be aligned to 0x10000 (64 KB), which is why there's a
+# small gap between phy_init and ota_0.
 # Name,   Type, SubType,  Offset,   Size,     Flags
 nvs,      data, nvs,      0x9000,   0x6000,
-phy_init, data, phy,      0xf000,   0x1000,
-factory,  app,  factory,  0x10000,  0x180000,
-storage,  data, spiffs,   ,         0x40000,
+otadata,  data, ota,      0xf000,   0x2000,
+phy_init, data, phy,      0x11000,  0x1000,
+ota_0,    app,  ota_0,    0x20000,  0x180000,
+ota_1,    app,  ota_1,    0x1A0000, 0x180000,
+storage,  data, spiffs,   0x320000, 0x40000,

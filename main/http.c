@@ -3,6 +3,7 @@
 #include "effects.h"
 #include "cube.h"
 #include "orient.h"
+#include "ota.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -358,6 +359,7 @@ static const httpd_uri_t s_uris[] = {
     { .uri="/api/startup",    .method=HTTP_POST, .handler=h_startup },
     { .uri="/api/random",     .method=HTTP_POST, .handler=h_random },
     { .uri="/api/orientation",.method=HTTP_POST, .handler=h_orientation },
+    { .uri="/api/ota",        .method=HTTP_POST, .handler=ota_http_handler },
     // Captive portal probe endpoints — redirect to /.
     { .uri="/generate_204",      .method=HTTP_GET, .handler=h_captive_redirect },
     { .uri="/gen_204",           .method=HTTP_GET, .handler=h_captive_redirect },
@@ -379,6 +381,11 @@ void http_start(void) {
     cfg.max_uri_handlers = sizeof(s_uris) / sizeof(s_uris[0]) + 4;
     cfg.lru_purge_enable = true;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
+    // OTA uploads ~1 MB over WiFi; bump receive timeouts and stack so a
+    // slow connection doesn't abort the transfer mid-stream.
+    cfg.recv_wait_timeout  = 15;
+    cfg.send_wait_timeout  = 15;
+    cfg.stack_size         = 8192;
 
     if (httpd_start(&s_server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");

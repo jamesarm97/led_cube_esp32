@@ -29,6 +29,7 @@ idf_component_register(
         "effect_tetris.c"
         "effect_pendulum.c"
         "effect_disco.c"
+        "ota.c"
         "net.c"
         "http.c"
         "dns_captive.c"
@@ -45,6 +46,8 @@ idf_component_register(
         esp_event
         esp_timer
         esp_hw_support
+        app_update
+        esp_partition
         driver
         lwip
 )

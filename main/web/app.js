@@ -243,5 +243,40 @@ document.getElementById("calib-reset").onclick = () => {
   if (confirm("Reset panel calibration?")) api("/api/calib/reset", {}).then(refresh);
 };
 
+// ---------- OTA firmware upload ----------
+// Uses XMLHttpRequest (not fetch) so we get upload-progress events for the
+// potentially multi-MB binary. The cube reboots on success; the polling
+// refresh loop will automatically reconnect and redraw once the new
+// firmware is back up.
+document.getElementById("ota-upload").onclick = () => {
+  const input = document.getElementById("ota-file");
+  if (!input.files || !input.files.length) return;
+  const file = input.files[0];
+  const status = document.getElementById("ota-status");
+  const prog = document.getElementById("ota-progress");
+
+  prog.classList.remove("hidden");
+  prog.value = 0;
+  status.textContent = `uploading ${file.name} (${(file.size/1024).toFixed(1)} KB)…`;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/ota", true);
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      prog.value = (e.loaded / e.total) * 100;
+      status.textContent = `${(e.loaded/1024).toFixed(1)} / ${(e.total/1024).toFixed(1)} KB`;
+    }
+  };
+  xhr.onload = () => {
+    if (xhr.status === 200) {
+      status.textContent = "upload ok — cube rebooting; reconnect to MatrixCube WiFi in ~15 s";
+    } else {
+      status.textContent = `upload failed (${xhr.status}): ${xhr.responseText || "no body"}`;
+    }
+  };
+  xhr.onerror = () => { status.textContent = "network error during upload"; };
+  xhr.send(file);
+};
+
 refresh();
 setInterval(refresh, 4000);

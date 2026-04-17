@@ -38,6 +38,27 @@ idf.py -p <PORT> flash monitor
 
 If you change `sdkconfig.defaults` or the partition table, run `rm sdkconfig && idf.py build` to regenerate.
 
+### OTA firmware updates
+
+The firmware ships with two OTA slots (`ota_0`, `ota_1`, 1.5 MB each) plus an `otadata` partition — see `partitions.csv` for the exact layout. Once the cube is running a version that includes OTA, you never need a USB cable again:
+
+1. `idf.py build` on your dev machine to produce `build/matrixcube.bin` (the app image; do **not** use `build/matrixcube-complete.bin`).
+2. Join the `MatrixCube` WiFi and open the control UI.
+3. In the **Firmware update** card, pick the `.bin`, hit **Upload**. Progress bar updates as the image streams over HTTP directly into the inactive OTA slot.
+4. On success the cube marks that slot bootable, replies `{"ok":true}`, and `esp_restart()`s. It comes back up in ~5 s running the new firmware; reconnect to the WiFi.
+
+Validation is automatic: `esp_ota_end()` checks the image magic and checksum, and a bad upload aborts without changing the boot partition — so a corrupted transfer leaves the running firmware intact. NVS (calibration, startup settings, orientation, etc.) lives in its own partition at `0x9000` and is preserved across OTA updates.
+
+**First-time migration (factory → OTA layout).** If you're upgrading from a pre-OTA build, a USB reflash is required once to write the new partition table:
+
+```sh
+rm sdkconfig           # regenerate from sdkconfig.defaults
+idf.py build
+idf.py -p <PORT> flash  # writes new partition table + firmware to ota_0
+```
+
+Calibration survives (same NVS location). The old `factory` partition contents become stale but harmless.
+
 ## First boot & calibration
 
 On first boot the cube enters face-ID calibration automatically (no panel map yet). Connect to the **MatrixCube** WiFi (open, SSID configurable). Any URL will redirect to the control UI at `http://192.168.4.1/`.
@@ -138,5 +159,6 @@ Relevant endpoints exposed by the HTTP server:
 | `POST /api/startup`      | `{"mode": "last"|"random"|"specific", "effect": "...", "interval_s": N}` | startup behavior |
 | `POST /api/random`       | `{"on": true|false}`                                   | runtime random-cycle toggle |
 | `POST /api/orientation`  | `{"mode": "face_up"|"corner_up"}`                      | physical orientation |
+| `POST /api/ota`          | *raw* firmware `.bin` as body                          | stream OTA image; cube reboots on success |
 
 All responses are JSON. Captive-portal probes (`/generate_204`, `/hotspot-detect.html`, etc.) 302 to `/` so connecting phones auto-pop the control UI.
