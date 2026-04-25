@@ -42,7 +42,7 @@ static void lava_enter(void) {
         s_balls[i].vx = (rngf() - 0.5f) * 0.06f;
         s_balls[i].vy = (rngf() - 0.5f) * 0.04f;
         s_balls[i].vz = (rngf() - 0.5f) * 0.06f;
-        s_balls[i].radius = 0.15f + rngf() * 0.09f;
+        s_balls[i].radius = 0.20f + rngf() * 0.12f;
         s_balls[i].heat   = rngf();
     }
     s_wobble = 0;
@@ -88,7 +88,10 @@ static void lava_step(float dt) {
         b->heat += (target - b->heat) * dt * 0.45f * speed;
     }
 
-    const float field_threshold = 0.80f;
+    // Lower "skin" threshold so blobs read as bigger, plus an inner
+    // "core" threshold above which pixels go white-hot.
+    const float field_skin = 0.50f;
+    const float field_core = 1.60f;
 
     for (int f = 0; f < CUBE_FACE_COUNT; f++) {
         for (int y = 0; y < 8; y++) {
@@ -107,20 +110,37 @@ static void lava_step(float dt) {
                     field += contrib;
                     hot_acc += contrib * b->heat;
                 }
-                if (field < field_threshold) continue;
+                if (field < field_skin) continue;
 
-                float over = field - field_threshold;
-                if (over > 1.0f) over = 1.0f;
-                float intensity = over * over * (3.0f - 2.0f * over); // smoothstep
+                // Skin → full bright across a wider band than before.
+                float over = (field - field_skin) / (field_core - field_skin);
+                if (over < 0) over = 0;
+                if (over > 1) over = 1;
+                float intensity = over * over * (3.0f - 2.0f * over);
+
+                // Core highlight: how "inside" the blob we are, past field_core.
+                float core = (field - field_core) / 0.8f;
+                if (core < 0) core = 0;
+                if (core > 1) core = 1;
+                core = core * core * (3.0f - 2.0f * core);
 
                 float heat_avg = hot_acc / (field + 1e-3f);
 
-                // Deep red at cool heat, orange/yellow when hot.
-                float r = (150.0f + heat_avg *  95.0f) * intensity;
-                float g = ( 10.0f + heat_avg * 190.0f) * intensity;
-                float bl = (30.0f * (1.0f - heat_avg)) * intensity;
+                // Base lava color: deep red → orange → yellow as heat rises.
+                float br = 210.0f + heat_avg *  45.0f;
+                float bg =  25.0f + heat_avg * 210.0f;
+                float bb =   5.0f + heat_avg *  30.0f;
+
+                // White-hot core: push toward yellow-white at the blob center.
+                float r  = br * intensity + core * (255.0f - br);
+                float g  = bg * intensity + core * (240.0f - bg);
+                float bl = bb * intensity + core * (180.0f - bb);
+
+                if (r  < 0)   r  = 0;
                 if (r  > 255) r  = 255;
+                if (g  < 0)   g  = 0;
                 if (g  > 255) g  = 255;
+                if (bl < 0)   bl = 0;
                 if (bl > 255) bl = 255;
                 render_set((cube_face_t)f, x, y,
                            (uint8_t)r, (uint8_t)g, (uint8_t)bl);

@@ -14,6 +14,13 @@
 // flutter down under gravity, the tree goes bare. Then the whole cycle
 // reseeds with a new tree shape.
 //
+// Rendering model: the LED cube is a hollow shell, so a purely
+// volumetric tree inside it would never touch the surface. Each face
+// instead sees a 2D silhouette projection of the tree — branches and
+// leaves are drawn using their in-plane distance on that face, with a
+// gentle depth fade so elements farther from the face appear dimmer.
+// The result is a consistent 3D tree seen from 6 viewpoints at once.
+//
 // Orientation-independent — trunk is anchored at cube-world (0.5, 0, 0.5)
 // growing along +y.
 
@@ -32,6 +39,7 @@ typedef struct {
 typedef struct {
     float x, y, z;      // position
     float vx, vy, vz;   // velocity (used when detached)
+    float radius;       // leaf cluster radius
     uint8_t alive;
     uint8_t attached;   // 1 = on the tree, 0 = free-falling
     uint8_t r, g, b;            // current color
@@ -65,12 +73,13 @@ static void seed_tree(void) {
     s_br_count = 0;
     s_lv_count = 0;
 
-    // Trunk: straight up from the floor with slight jitter.
+    // Trunk: straight up from the floor with slight jitter. Tall enough
+    // that side-face silhouettes read as a tree, not a stump.
     float tip_x = 0.5f + (rngf() - 0.5f) * 0.06f;
     float tip_z = 0.5f + (rngf() - 0.5f) * 0.06f;
-    float tip_y = 0.42f + rngf() * 0.08f;
+    float tip_y = 0.55f + rngf() * 0.08f;
     add_branch(0.5f, 0.02f, 0.5f, tip_x, tip_y, tip_z,
-               0.0f, 2.2f, 0.055f, 0);
+               0.0f, 2.2f, 0.10f, 0);
 
     // Primary branches: 3 around the trunk tip, spread ~120° apart.
     const int L1_N = 3;
@@ -78,33 +87,39 @@ static void seed_tree(void) {
     float L1_tip_x[3], L1_tip_y[3], L1_tip_z[3];
     for (int i = 0; i < L1_N; i++) {
         float a = base_angle + (6.2832f / L1_N) * i;
-        float len = 0.18f + rngf() * 0.07f;
-        L1_tip_x[i] = tip_x + cosf(a) * len * 0.85f;
-        L1_tip_z[i] = tip_z + sinf(a) * len * 0.85f;
-        L1_tip_y[i] = tip_y + len * 0.80f;
+        float len = 0.26f + rngf() * 0.07f;
+        L1_tip_x[i] = tip_x + cosf(a) * len * 0.95f;
+        L1_tip_z[i] = tip_z + sinf(a) * len * 0.95f;
+        L1_tip_y[i] = tip_y + len * 0.70f;
+        if (L1_tip_y[i] > 0.92f) L1_tip_y[i] = 0.92f;
         add_branch(tip_x, tip_y, tip_z,
                    L1_tip_x[i], L1_tip_y[i], L1_tip_z[i],
-                   2.2f, 1.6f, 0.040f, 1);
+                   2.2f, 1.6f, 0.075f, 1);
     }
 
     // Twigs: two per primary branch, each ending in a leaf.
     for (int i = 0; i < L1_N; i++) {
         for (int j = 0; j < 2; j++) {
             float a = base_angle + (6.2832f / L1_N) * i + (j ? 0.7f : -0.7f);
-            float len = 0.13f + rngf() * 0.06f;
-            float tx = L1_tip_x[i] + cosf(a) * len * 0.9f;
-            float tz = L1_tip_z[i] + sinf(a) * len * 0.9f;
-            float ty = L1_tip_y[i] + len * 0.55f;
-            if (ty > 0.92f) ty = 0.92f;
+            float len = 0.17f + rngf() * 0.07f;
+            float tx = L1_tip_x[i] + cosf(a) * len * 1.0f;
+            float tz = L1_tip_z[i] + sinf(a) * len * 1.0f;
+            float ty = L1_tip_y[i] + len * 0.50f;
+            if (ty > 0.94f) ty = 0.94f;
+            if (tx < 0.05f) tx = 0.05f;
+            if (tx > 0.95f) tx = 0.95f;
+            if (tz < 0.05f) tz = 0.05f;
+            if (tz > 0.95f) tz = 0.95f;
             add_branch(L1_tip_x[i], L1_tip_y[i], L1_tip_z[i],
                        tx, ty, tz,
-                       3.8f, 1.4f, 0.030f, 2);
+                       3.8f, 1.4f, 0.055f, 2);
             if (s_lv_count < MAX_LEAVES) {
                 leaf_t *lv = &s_lv[s_lv_count++];
                 lv->x = tx; lv->y = ty; lv->z = tz;
                 lv->vx = lv->vy = lv->vz = 0;
                 lv->alive = 1;
                 lv->attached = 1;
+                lv->radius = 0.13f + rngf() * 0.04f;
                 uint8_t gr = 100 + (esp_random() % 70);
                 uint8_t gg = 170 + (esp_random() % 70);
                 uint8_t gb =  30 + (esp_random() % 40);
@@ -128,20 +143,38 @@ static void tree_enter(void) {
     }
 }
 
-static float seg_dist(float px, float py, float pz,
-                      float ax, float ay, float az,
-                      float bx, float by, float bz) {
-    float dx = bx - ax, dy = by - ay, dz = bz - az;
-    float l2 = dx * dx + dy * dy + dz * dz;
+// 2D point-to-segment distance in the face plane, plus the fractional
+// position t ∈ [0,1] of the closest point along the segment — used to
+// sample the correct depth value of the tree element for depth fade.
+static float seg_dist2d(float px, float py,
+                        float ax, float ay, float bx, float by,
+                        float *out_t) {
+    float dx = bx - ax, dy = by - ay;
+    float l2 = dx * dx + dy * dy;
     float t = 0;
     if (l2 > 1e-6f) {
-        t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / l2;
+        t = ((px - ax) * dx + (py - ay) * dy) / l2;
     }
     if (t < 0) t = 0;
     if (t > 1) t = 1;
-    float cx = ax + dx * t, cy = ay + dy * t, cz = az + dz * t;
-    float ex = px - cx, ey = py - cy, ez = pz - cz;
-    return sqrtf(ex * ex + ey * ey + ez * ez);
+    float cx = ax + dx * t, cy = ay + dy * t;
+    float ex = px - cx, ey = py - cy;
+    if (out_t) *out_t = t;
+    return sqrtf(ex * ex + ey * ey);
+}
+
+// Cube-world axis indices (0=x, 1=y, 2=z) spanning each face's plane,
+// plus the axis perpendicular to it and the face's coordinate along it.
+static void face_basis(cube_face_t f, int *iu, int *iv, int *iw, float *w_at_face) {
+    switch (f) {
+        case FACE_TOP:    *iu = 0; *iv = 2; *iw = 1; *w_at_face = 1.0f; break;
+        case FACE_BOTTOM: *iu = 0; *iv = 2; *iw = 1; *w_at_face = 0.0f; break;
+        case FACE_NORTH:  *iu = 0; *iv = 1; *iw = 2; *w_at_face = 0.0f; break;
+        case FACE_SOUTH:  *iu = 0; *iv = 1; *iw = 2; *w_at_face = 1.0f; break;
+        case FACE_EAST:   *iu = 2; *iv = 1; *iw = 0; *w_at_face = 1.0f; break;
+        case FACE_WEST:   *iu = 2; *iv = 1; *iw = 0; *w_at_face = 0.0f; break;
+        default:          *iu = 0; *iv = 1; *iw = 2; *w_at_face = 0.5f; break;
+    }
 }
 
 // Blend current leaf color toward warm autumn colors by progress t in [0,1].
@@ -215,35 +248,51 @@ static void tree_step(float dt) {
         seed_tree();
     }
 
-    const float leaf_r = 0.055f;
-    const uint8_t TRUNK_R = 95, TRUNK_G = 58, TRUNK_B = 22;
+    const uint8_t TRUNK_R = 140, TRUNK_G = 78, TRUNK_B = 28;
 
     for (int f = 0; f < CUBE_FACE_COUNT; f++) {
+        int iu, iv, iw;
+        float w_face;
+        face_basis((cube_face_t)f, &iu, &iv, &iw, &w_face);
+
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                float px = s_px[f][x][y];
-                float py = s_py[f][x][y];
-                float pz = s_pz[f][x][y];
+                float pos[3] = {
+                    s_px[f][x][y], s_py[f][x][y], s_pz[f][x][y],
+                };
+                float pu = pos[iu], pv = pos[iv];
 
                 float rr = 0, gg = 0, bb = 0;
                 bool hit = false;
 
-                // Branches: animate growth by interpolating the endpoint.
+                // Branches: project endpoints into the face plane, measure
+                // 2D distance, fade with perpendicular depth.
                 for (int i = 0; i < s_br_count; i++) {
                     branch_t *b = &s_br[i];
                     float age = s_phase_t - b->start_t;
                     if (age <= 0) continue;
-                    float t = age / b->grow_dur;
-                    if (t > 1) t = 1;
-                    float ex = b->ax + (b->bx - b->ax) * t;
-                    float ey = b->ay + (b->by - b->ay) * t;
-                    float ez = b->az + (b->bz - b->az) * t;
-                    float d = seg_dist(px, py, pz,
-                                       b->ax, b->ay, b->az,
-                                       ex, ey, ez);
+                    float t_grow = age / b->grow_dur;
+                    if (t_grow > 1) t_grow = 1;
+                    float bend_x = b->ax + (b->bx - b->ax) * t_grow;
+                    float bend_y = b->ay + (b->by - b->ay) * t_grow;
+                    float bend_z = b->az + (b->bz - b->az) * t_grow;
+                    float a3[3] = { b->ax, b->ay, b->az };
+                    float e3[3] = { bend_x, bend_y, bend_z };
+                    float seg_t;
+                    float d = seg_dist2d(pu, pv,
+                                         a3[iu], a3[iv],
+                                         e3[iu], e3[iv],
+                                         &seg_t);
                     if (d >= b->thick) continue;
+                    float w_closest = a3[iw] + (e3[iw] - a3[iw]) * seg_t;
+                    float depth = fabsf(w_face - w_closest);
+                    // Depth fade: nearby silhouette nearly full brightness,
+                    // far side of cube ~30% brightness.
+                    float depth_k = 1.0f - depth * 0.85f;
+                    if (depth_k < 0.25f) depth_k = 0.25f;
                     float shade = 1.0f - d / b->thick;
-                    float scale = 1.0f - b->depth * 0.12f;
+                    shade = shade * shade * (3.0f - 2.0f * shade); // smoothstep
+                    float scale = (1.0f - b->depth * 0.10f) * depth_k;
                     rr += TRUNK_R * shade * scale;
                     gg += TRUNK_G * shade * scale;
                     bb += TRUNK_B * shade * scale;
@@ -258,10 +307,16 @@ static void tree_step(float dt) {
                     leaf_t *lv = &s_lv[i];
                     if (!lv->alive) continue;
                     float env = lv->attached ? bloom : 1.0f;
-                    float dx = px - lv->x, dy = py - lv->y, dz = pz - lv->z;
-                    float d2 = dx*dx + dy*dy + dz*dz;
-                    if (d2 >= leaf_r * leaf_r) continue;
-                    float k = (1.0f - sqrtf(d2) / leaf_r) * env;
+                    float lpos[3] = { lv->x, lv->y, lv->z };
+                    float du = pu - lpos[iu], dv = pv - lpos[iv];
+                    float d = sqrtf(du * du + dv * dv);
+                    if (d >= lv->radius) continue;
+                    float depth = fabsf(w_face - lpos[iw]);
+                    float depth_k = 1.0f - depth * 0.75f;
+                    if (depth_k < 0.30f) depth_k = 0.30f;
+                    float k = 1.0f - d / lv->radius;
+                    k = k * k * (3.0f - 2.0f * k); // smoothstep
+                    k *= env * depth_k;
                     rr += lv->r * k;
                     gg += lv->g * k;
                     bb += lv->b * k;

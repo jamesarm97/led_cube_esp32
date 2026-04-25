@@ -19,7 +19,7 @@
 //
 // Orientation-independent — disk lives in cube-world y = 0.5.
 
-#define BH_PARTICLES 10
+#define BH_PARTICLES 18
 
 typedef struct {
     float r;          // current radius from axis (on the disk plane)
@@ -83,7 +83,8 @@ static void bh_step(float dt) {
     s_spawn_cd -= dt;
     if (s_spawn_cd <= 0) {
         spawn_particle();
-        s_spawn_cd = 0.35f + rngf() * 0.80f;
+        spawn_particle();
+        s_spawn_cd = 0.18f + rngf() * 0.35f;
     }
     for (int i = 0; i < BH_PARTICLES; i++) {
         if (!s_pp[i].alive) continue;
@@ -100,8 +101,8 @@ static void bh_step(float dt) {
     const float r_event   = 0.14f;   // absolute dark radius
     const float r_photon  = 0.20f;   // photon ring peak
     const float r_inner   = 0.22f;
-    const float r_outer   = 0.70f;   // disk extends near the face edges
-    const float disk_half = 0.13f;   // disk half-thickness (cube y-units)
+    const float r_outer   = 0.78f;   // disk extends past the face edges
+    const float disk_half = 0.18f;   // thicker disk — catches more pixels
 
     for (int f = 0; f < CUBE_FACE_COUNT; f++) {
         for (int y = 0; y < 8; y++) {
@@ -126,18 +127,30 @@ static void bh_step(float dt) {
 
                 // Photon ring — bright halo around the hole in all directions.
                 float ring_d = r3 - r_photon;
-                float ring = expf(-(ring_d * ring_d) * (1.0f / (2.0f * 0.05f * 0.05f)));
-                rr += 255.0f * ring * 0.70f;
-                gg += 170.0f * ring * 0.70f;
-                bb +=  70.0f * ring * 0.70f;
+                float ring = expf(-(ring_d * ring_d) * (1.0f / (2.0f * 0.06f * 0.06f)));
+                rr += 255.0f * ring * 1.10f;
+                gg += 185.0f * ring * 1.10f;
+                bb +=  90.0f * ring * 1.10f;
 
-                // Broad gravitational halo, visible even on the TOP/BOTTOM
-                // faces where the disk never passes. Falls off gently with
-                // cube-space radius.
-                float halo = expf(-(ring_d * ring_d) * (1.0f / (2.0f * 0.22f * 0.22f)));
-                rr += 180.0f * halo * 0.25f;
-                gg +=  90.0f * halo * 0.25f;
-                bb +=  40.0f * halo * 0.25f;
+                // Broad gravitational halo — wider + brighter so TOP/BOTTOM
+                // faces, where the thin equatorial disk never passes, still
+                // glow with warm redshift light around the hole.
+                float halo = expf(-(ring_d * ring_d) * (1.0f / (2.0f * 0.32f * 0.32f)));
+                rr += 210.0f * halo * 0.55f;
+                gg += 100.0f * halo * 0.55f;
+                bb +=  50.0f * halo * 0.55f;
+
+                // Polar jets: twin narrow beams along the y-axis. Visible as
+                // a bright cyan spot at the center of TOP/BOTTOM faces and a
+                // faint column piercing through the side faces at x=z=0.5.
+                float axial_dist_sq = dxp * dxp + dzp * dzp;
+                float jet_core = expf(-axial_dist_sq / (2.0f * 0.05f * 0.05f));
+                float jet_wide = expf(-axial_dist_sq / (2.0f * 0.18f * 0.18f));
+                float jet_axial = expf(-(dyp * dyp) / (2.0f * 0.40f * 0.40f));
+                float jet = (jet_core * 1.0f + jet_wide * 0.35f) * jet_axial;
+                rr += 140.0f * jet;
+                gg += 200.0f * jet;
+                bb += 255.0f * jet;
 
                 // Accretion disk: thin slab in y, annular in r.
                 float depth_env = 1.0f - fabsf(dyp) / disk_half;
@@ -165,10 +178,38 @@ static void bh_step(float dt) {
                     float dg = 210.0f - t * 120.0f;
                     float db = 255.0f - t * 215.0f;
 
-                    float w = depth_env * radial_env * pattern * doppler * 1.4f;
+                    float w = depth_env * radial_env * pattern * doppler * 1.9f;
                     rr += dr * w;
                     gg += dg * w;
                     bb += db * w;
+                }
+
+                // Face-on spiral arms for TOP/BOTTOM viewers: a softer, flatter
+                // version of the disk pattern that doesn't require being inside
+                // the thin disk slab. This paints the pole faces with a rotating
+                // accretion spiral rather than leaving them bland.
+                if (rh > r_inner - 0.05f && rh < r_outer) {
+                    float slab_fade = fabsf(dyp) / 0.55f;
+                    if (slab_fade > 1) slab_fade = 1;
+                    float axial_env = 1.0f - slab_fade;
+                    axial_env = axial_env * axial_env;
+                    float arm_theta = atan2f(dzp, dxp);
+                    float arm = 0.5f + 0.5f *
+                        sinf(2.0f * arm_theta - s_time * 3.2f - rh * 7.0f);
+                    arm = powf(arm, 1.4f);
+                    float rdial =
+                        ss(r_inner - 0.05f, r_inner + 0.05f, rh) *
+                        (1.0f - ss(r_outer - 0.12f, r_outer, rh));
+                    float t2 = (rh - r_inner) / (r_outer - r_inner);
+                    if (t2 < 0) t2 = 0;
+                    if (t2 > 1) t2 = 1;
+                    float ar = 220.0f + t2 *  35.0f;
+                    float ag = 160.0f - t2 *  80.0f;
+                    float ab = 110.0f - t2 *  80.0f;
+                    float aw = axial_env * arm * rdial * 0.75f;
+                    rr += ar * aw;
+                    gg += ag * aw;
+                    bb += ab * aw;
                 }
 
                 // Infalling particle streaks — sampled in cylindrical coords.
