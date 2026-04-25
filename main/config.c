@@ -325,6 +325,14 @@ const char *effect_name(effect_id_t e) {
         case EFFECT_TETRIS:      return "tetris";
         case EFFECT_PENDULUM:    return "pendulum";
         case EFFECT_DISCO:       return "disco";
+        case EFFECT_SUPERNOVA:   return "supernova";
+        case EFFECT_OCEAN:       return "ocean";
+        case EFFECT_PERLIN_FIRE: return "perlin_fire";
+        case EFFECT_LAVA:        return "lava";
+        case EFFECT_RUBIK:       return "rubik";
+        case EFFECT_TREE:        return "tree";
+        case EFFECT_DNA:         return "dna";
+        case EFFECT_BLACKHOLE:   return "blackhole";
         default:                 return "?";
     }
 }
@@ -357,6 +365,14 @@ effect_id_t effect_from_name(const char *s) {
     if (!strcmp(s, "tetris"))     return EFFECT_TETRIS;
     if (!strcmp(s, "pendulum"))   return EFFECT_PENDULUM;
     if (!strcmp(s, "disco"))      return EFFECT_DISCO;
+    if (!strcmp(s, "supernova"))  return EFFECT_SUPERNOVA;
+    if (!strcmp(s, "ocean"))      return EFFECT_OCEAN;
+    if (!strcmp(s, "perlin_fire"))return EFFECT_PERLIN_FIRE;
+    if (!strcmp(s, "lava"))       return EFFECT_LAVA;
+    if (!strcmp(s, "rubik"))      return EFFECT_RUBIK;
+    if (!strcmp(s, "tree"))       return EFFECT_TREE;
+    if (!strcmp(s, "dna"))        return EFFECT_DNA;
+    if (!strcmp(s, "blackhole"))  return EFFECT_BLACKHOLE;
     return EFFECT_OFF;
 }
 

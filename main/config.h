@@ -36,6 +36,14 @@ typedef enum {
     EFFECT_TETRIS,      // tetrominoes fall on the 4 side faces, stack, clear
     EFFECT_PENDULUM,    // swinging pendulums — one per side face
     EFFECT_DISCO,       // cube-shaped disco ball: rotating vertical color stripes with fade trail
+    EFFECT_SUPERNOVA,   // pulsing stellar core at cube center erupts in shockwaves
+    EFFECT_OCEAN,       // volumetric sea: waves build, break into white foam caps, then calm
+    EFFECT_PERLIN_FIRE, // volumetric 3D Perlin fire rising from the cube floor
+    EFFECT_LAVA,        // lava lamp: warm metaballs rise, cool, sink, reheat
+    EFFECT_RUBIK,       // self-playing Rubik's cube with U/D/E layer turns
+    EFFECT_TREE,        // L-system tree: grow, bloom, autumn, shed leaves, reseed
+    EFFECT_DNA,         // double-helix DNA strand rotating around the vertical axis
+    EFFECT_BLACKHOLE,   // black hole: dark core + rotating accretion disk + infalling particles
     EFFECT_COUNT,
 } effect_id_t;
 

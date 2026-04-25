@@ -108,6 +108,14 @@ Visual effects:
 | Pulse     | concentric Gaussian shockwaves emanate from the up pole |
 | Tetris    | 4 independent self-playing Tetris boards on the side faces |
 | Pendulum  | damped 2D pendulums per face. Face-up: 4 on side faces. Corner-up: 6, one per face, pivoting at each face's high corner. |
+| Supernova | stellar core at cube center breathes and heats up, erupts in a spherical shockwave, then falls to a dim ember and cycles. Rainbow-speed knob sets eruption cadence. |
+| Ocean     | volumetric sea filling the lower half of the cube: rolling turquoise waves build up into a storm, crests break into white foam caps, then calm back to glass. Side faces show the cross-section; TOP shows the surface from above; BOTTOM is the dark seabed. Rainbow-speed knob controls wave and storm pace. |
+| Perlin fire | volumetric 3D Perlin-noise flames fill the entire cube, rising from the floor with turbulent advection. Every face reads a consistent flame body — hot yellow-white rising from the bottom, cooling through orange and red as it reaches the top. |
+| Lava lamp | warm metaballs float inside the cube, deforming into organic blobs when they touch. Each blob heats at the bottom and buoys upward, cools at the top and sinks, then reheats — the classic convection loop of a real lava lamp. Deep red when cool, orange/yellow when hot. |
+| Rubik     | all six faces display a 3x3 sticker grid in the standard Rubik's color scheme. Every ~2 seconds one of U / D / E (top layer, bottom layer, equatorial middle slice) fires in a random direction — affected stickers dim briefly, snap to their new positions, and brighten back to full color. |
+| Tree      | an L-system tree sprouts from the cube floor, grows a trunk and two layers of branches, blooms a green canopy, tints through autumn yellow/orange/red, sheds its leaves as they flutter down under gravity, then reseeds with a new tree shape. Rainbow-speed knob controls how fast seasons pass. |
+| DNA       | a double-helix DNA strand fills the cube vertically. Two lavender-white phosphate backbones twist around the Y axis; colored rungs (A-T red/blue, C-G yellow/green base pairs) connect them at regular intervals. The whole helix rotates slowly so every side face sees the strands cross in and out. |
+| Black hole| a dark event horizon anchored at cube center, wrapped in a photon ring; a thin rotating accretion disk lies in the equatorial plane — blue-white at the inner edge, cooling to orange outside, with a two-arm trailing spiral and Doppler-brightened approach side. Occasional bright particles spiral in and disappear past the horizon. |
 
 Calibration modes (`face_id`, `edge_match`, `face_test`) are available but not included in the random cycle pool.
 
